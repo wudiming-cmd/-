@@ -1,0 +1,1920 @@
+import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react';
+import domtoimage from 'dom-to-image-more';
+import { removeBackground } from './utils/removeBg';
+import { analyzeImageWithAI } from './utils/aiAnalyze';
+import type { ModuleData } from './types';
+import { BackgroundTab } from './components/BackgroundTab';
+import { ModuleTab } from './components/ModuleTab';
+import {
+  Plane,
+  Music,
+  Flashlight,
+  AlarmClock,
+  Moon,
+  Sun,
+  Volume2,
+  Calculator,
+  Camera,
+  RotateCw,
+  Bell,
+  Battery,
+  Settings,
+  Wifi,
+  Bluetooth,
+  Radio,
+  Sparkles,
+} from 'lucide-react';
+
+type ModuleTemplate = Omit<ModuleData, 'id'> & { category: string };
+
+type BackgroundLayer = {
+  id: string;
+  src: string;
+  name: string;
+  cutout: boolean;
+  opacity: number;
+  blendMode: string;
+  scale?: number;
+  positionX?: number;
+  positionY?: number;
+  fit?: 'cover' | 'contain';
+};
+
+export default function App() {
+  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+  const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+  const [draggingModuleId, setDraggingModuleId] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const [backgroundLayers, setBackgroundLayers] = useState<BackgroundLayer[]>([]);
+  const [backgroundBlur, setBackgroundBlur] = useState<number>(0);
+  const [selectedTab, setSelectedTab] = useState<'background' | 'module'>('module');
+  const [history, setHistory] = useState<Array<{modules: ModuleData[]; backgroundLayers: BackgroundLayer[]; backgroundBlur: number}>>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const gridCellWidth = 177;
+  const gridCellHeight = 177;
+  const gridGap = 33;
+  const gridOriginLeft = 137;
+  const gridOriginTop = 240;
+  const gridColumns = 4;
+  const gridRows = 6;
+  const zoom = 0.45;
+  const gridWidth = gridColumns * gridCellWidth + (gridColumns - 1) * gridGap;
+  const gridHeight = gridRows * gridCellHeight + (gridRows - 1) * gridGap;
+
+  const getModulePositionFromGrid = (module: ModuleData) => {
+    const gridX = Math.min(Math.max(module.gridX, 1), gridColumns);
+    const gridY = Math.min(Math.max(module.gridY, 1), gridRows);
+    const widthUnits = Math.min(Math.max(module.widthUnits, 1), gridColumns);
+    const heightUnits = Math.min(Math.max(module.heightUnits, 1), gridRows);
+    const width = widthUnits * gridCellWidth + (widthUnits - 1) * gridGap;
+    const height = heightUnits * gridCellHeight + (heightUnits - 1) * gridGap;
+    const left = gridOriginLeft + (gridX - 1) * (gridCellWidth + gridGap);
+    const top = gridOriginTop + (gridY - 1) * (gridCellHeight + gridGap);
+    return { left, top, width, height };
+  };
+
+  const doModulesOverlap = (aX: number, aY: number, aW: number, aH: number, bX: number, bY: number, bW: number, bH: number) => {
+    const aRight = aX + aW - 1;
+    const aBottom = aY + aH - 1;
+    const bRight = bX + bW - 1;
+    const bBottom = bY + bH - 1;
+    return !(aRight < bX || aX > bRight || aBottom < bY || aY > bBottom);
+  };
+
+  const isGridPositionAvailable = (
+    currentId: string,
+    gridX: number,
+    gridY: number,
+    widthUnits: number,
+    heightUnits: number
+  ) => {
+    return modules.every((module) =>
+      module.id === currentId
+        ? true
+        : !doModulesOverlap(
+            gridX,
+            gridY,
+            widthUnits,
+            heightUnits,
+            module.gridX,
+            module.gridY,
+            module.widthUnits,
+            module.heightUnits
+          )
+    );
+  };
+
+  const findAvailableGridPosition = (widthUnits: number, heightUnits: number): { gridX: number; gridY: number } | null => {
+    for (let y = 1; y <= gridRows - heightUnits + 1; y += 1) {
+      for (let x = 1; x <= gridColumns - widthUnits + 1; x += 1) {
+        const occupied = modules.some((module) =>
+          doModulesOverlap(
+            x,
+            y,
+            widthUnits,
+            heightUnits,
+            module.gridX,
+            module.gridY,
+            module.widthUnits,
+            module.heightUnits
+          )
+        );
+        if (!occupied) {
+          return { gridX: x, gridY: y };
+        }
+      }
+    }
+    return null;
+  };
+
+  const moduleTemplates: ModuleTemplate[] = [
+    {
+      icon: null,
+      iconName: 'Small',
+      position: { left: 0, top: 0, width: gridCellWidth, height: gridCellHeight, borderRadius: 142 },
+      gridX: 1,
+      gridY: 1,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(102, 126, 234, 0.85)',
+      iconColor: '#FFFFFF',
+      category: '小图标',
+    },
+    {
+      icon: null,
+      iconName: 'Horizontal',
+      position: { left: 0, top: 0, width: gridCellWidth * 2 + gridGap, height: gridCellHeight, borderRadius: 62 },
+      gridX: 1,
+      gridY: 1,
+      widthUnits: 2,
+      heightUnits: 1,
+      backgroundColor: 'rgba(142, 68, 173, 0.85)',
+      iconColor: '#FFFFFF',
+      category: '横着',
+    },
+    {
+      icon: null,
+      iconName: 'Vertical',
+      position: { left: 0, top: 0, width: gridCellWidth, height: gridCellHeight * 2 + gridGap, borderRadius: 62 },
+      gridX: 1,
+      gridY: 1,
+      widthUnits: 1,
+      heightUnits: 2,
+      backgroundColor: 'rgba(255, 107, 107, 0.85)',
+      iconColor: '#FFFFFF',
+      category: '竖着',
+    },
+    {
+      icon: null,
+      iconName: 'Large',
+      position: { left: 0, top: 0, width: gridCellWidth * 2 + gridGap, height: gridCellHeight * 2 + gridGap, borderRadius: 91 },
+      gridX: 1,
+      gridY: 1,
+      widthUnits: 2,
+      heightUnits: 2,
+      backgroundColor: 'rgba(255, 69, 180, 0.85)',
+      iconColor: '#FFFFFF',
+      label: '大方块',
+      category: '大图标',
+    },
+  ];
+
+  const handleModuleDragStart = (event: ReactPointerEvent<HTMLDivElement>, moduleId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedModuleId(moduleId);
+    setDraggingModuleId(moduleId);
+  };
+
+  const handlePointerMove = (event: PointerEvent | ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingModuleId || !previewRef.current) {
+      return;
+    }
+
+    const rect = previewRef.current.getBoundingClientRect();
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+    const pointerX = (clientX - rect.left) / zoom;
+    const pointerY = (clientY - rect.top) / zoom;
+    const rawGridX = Math.round((pointerX - gridOriginLeft) / (gridCellWidth + gridGap)) + 1;
+    const rawGridY = Math.round((pointerY - gridOriginTop) / (gridCellHeight + gridGap)) + 1;
+
+    const draggedModule = modules.find((module) => module.id === draggingModuleId);
+    if (!draggedModule) {
+      return;
+    }
+
+    const newGridX = Math.min(
+      Math.max(rawGridX, 1),
+      gridColumns - draggedModule.widthUnits + 1
+    );
+    const newGridY = Math.min(
+      Math.max(rawGridY, 1),
+      gridRows - draggedModule.heightUnits + 1
+    );
+
+    if (
+      isGridPositionAvailable(
+        draggingModuleId,
+        newGridX,
+        newGridY,
+        draggedModule.widthUnits,
+        draggedModule.heightUnits
+      )
+    ) {
+      handleModuleUpdate(draggingModuleId, { gridX: newGridX, gridY: newGridY });
+    }
+  };
+
+  const handlePreviewPointerUp = () => {
+    setDraggingModuleId(null);
+  };
+
+  const pushHistory = (snapshot: { modules: ModuleData[]; backgroundLayers: BackgroundLayer[]; backgroundBlur: number }) => {
+    setHistory((prev) => {
+      const next = prev.slice(0, historyIndex + 1);
+      return [...next, snapshot];
+    });
+    setHistoryIndex((prev) => prev + 1);
+  };
+
+  const commitCanvasState = (
+    nextModules: ModuleData[],
+    nextBackgroundLayers: BackgroundLayer[] = backgroundLayers,
+    nextBackgroundBlur: number = backgroundBlur
+  ) => {
+    setModules(nextModules);
+    setBackgroundLayers(nextBackgroundLayers);
+    setBackgroundBlur(nextBackgroundBlur);
+    pushHistory({
+      modules: nextModules,
+      backgroundLayers: nextBackgroundLayers,
+      backgroundBlur: nextBackgroundBlur,
+    });
+  };
+
+  const handleUndo = () => {
+    if (historyIndex <= 0) {
+      return;
+    }
+    const previous = history[historyIndex - 1];
+    if (!previous) {
+      return;
+    }
+    setModules(previous.modules);
+    setBackgroundLayers(previous.backgroundLayers);
+    setBackgroundBlur(previous.backgroundBlur);
+    setHistoryIndex(historyIndex - 1);
+  };
+
+  useEffect(() => {
+    if (!draggingModuleId) {
+      return;
+    }
+
+    const handleWindowUp = () => {
+      setDraggingModuleId(null);
+    };
+
+    window.addEventListener('pointerup', handleWindowUp);
+    window.addEventListener('pointercancel', handleWindowUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    return () => {
+      window.removeEventListener('pointerup', handleWindowUp);
+      window.removeEventListener('pointercancel', handleWindowUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+    };
+  }, [draggingModuleId, handlePointerMove]);
+
+  // --- Helpers for drag & drop from outside (files) and from sidebar (templates) ---
+  const getModuleIdAtPointer = (clientX: number, clientY: number) => {
+    if (!previewRef.current) return null;
+    const rect = previewRef.current.getBoundingClientRect();
+    const pointerX = (clientX - rect.left) / zoom;
+    const pointerY = (clientY - rect.top) / zoom;
+    for (const m of modules) {
+      const pos = getModulePositionFromGrid(m);
+      if (pointerX >= pos.left && pointerX <= pos.left + pos.width && pointerY >= pos.top && pointerY <= pos.top + pos.height) {
+        return m.id;
+      }
+    }
+    return null;
+  };
+
+  const getGridFromPointer = (clientX: number, clientY: number) => {
+    if (!previewRef.current) return null;
+    const rect = previewRef.current.getBoundingClientRect();
+    const clientXR = clientX;
+    const clientYR = clientY;
+    const pointerX = (clientXR - rect.left) / zoom;
+    const pointerY = (clientYR - rect.top) / zoom;
+    const rawGridX = Math.round((pointerX - gridOriginLeft) / (gridCellWidth + gridGap)) + 1;
+    const rawGridY = Math.round((pointerY - gridOriginTop) / (gridCellHeight + gridGap)) + 1;
+    return { rawGridX, rawGridY };
+  };
+
+  const blobToDataURL = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  const handleAddUploadedFile = async (file: File) => {
+    // Add uploaded image into the left uploads area (no automatic module creation)
+    setIsAnalyzing(true);
+    try {
+      const dataURL = await blobToDataURL(file);
+      const id = `upload-${Date.now()}`;
+      setUploadedImages((prev) => [{ id, dataURL, name: file.name }, ...prev]);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handlePreviewDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsCanvasDragActive(true);
+  };
+
+  const handlePreviewDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    // update hovered module
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const overModuleId = getModuleIdAtPointer(clientX, clientY);
+    setHoveredModuleIdDuringDrag(overModuleId);
+  };
+
+  const handlePreviewDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    // if leaving the preview area
+    setIsCanvasDragActive(false);
+    setHoveredModuleIdDuringDrag(null);
+  };
+
+  const handlePreviewDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsCanvasDragActive(false);
+    const file = e.dataTransfer?.files?.[0];
+    const templateData = e.dataTransfer?.getData('application/json');
+    const dataURIdrag = e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain');
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
+    // If dropped a dataURL (from uploads area) onto a module -> fill directly
+    const targetModuleId = getModuleIdAtPointer(clientX, clientY);
+    if (dataURIdrag && targetModuleId) {
+      // apply dataURL directly
+      const dataURL = dataURIdrag;
+      setIsAnalyzing(true);
+      try {
+        let aiResult = null;
+        try {
+          aiResult = await analyzeImageWithAI(dataURL);
+        } catch (err) {
+          console.warn('AI analyze failed', err);
+        }
+        const nextModules = modules.map((m) => {
+          if (m.id !== targetModuleId) return m;
+          return {
+            ...m,
+            customIcon: dataURL,
+            backgroundColor: aiResult?.backgroundColor || m.backgroundColor,
+            iconColor: aiResult?.iconColor || m.iconColor,
+            label: aiResult?.label || m.label,
+          };
+        });
+        commitCanvasState(nextModules);
+        setFlashingModuleId(targetModuleId);
+        setTimeout(() => setFlashingModuleId(null), 1200);
+      } finally {
+        setIsAnalyzing(false);
+      }
+      return;
+    }
+
+    // If dropped a file onto a module -> do asset filling
+    if (file && targetModuleId) {
+      // process the file for the target module
+      setIsAnalyzing(true);
+      try {
+        const cutoutBlob = await removeBackground(file).catch((err) => {
+          console.warn('removeBackground failed', err);
+          return file;
+        });
+        const dataURL = await blobToDataURL(cutoutBlob instanceof Blob ? cutoutBlob : file);
+        let aiResult = null;
+        try {
+          aiResult = await analyzeImageWithAI(dataURL);
+        } catch (err) {
+          console.warn('AI analyze failed', err);
+        }
+
+        const nextModules = modules.map((m) => {
+          if (m.id !== targetModuleId) return m;
+          return {
+            ...m,
+            customIcon: dataURL,
+            backgroundColor: aiResult?.backgroundColor || m.backgroundColor,
+            iconColor: aiResult?.iconColor || m.iconColor,
+            label: aiResult?.label || m.label,
+          };
+        });
+        commitCanvasState(nextModules);
+        setFlashingModuleId(targetModuleId);
+        setTimeout(() => setFlashingModuleId(null), 1200);
+      } finally {
+        setIsAnalyzing(false);
+      }
+      return;
+    }
+
+    // If dropped a template json (drag from sidebar), add new module at drop grid
+    if (templateData) {
+      try {
+        const template = JSON.parse(templateData);
+        const grid = getGridFromPointer(clientX, clientY);
+        const widthUnits = template.widthUnits || 1;
+        const heightUnits = template.heightUnits || 1;
+        const targetGridX = Math.min(Math.max(grid?.rawGridX || 1, 1), gridColumns - widthUnits + 1);
+        const targetGridY = Math.min(Math.max(grid?.rawGridY || 1, 1), gridRows - heightUnits + 1);
+        if (!isGridPositionAvailable('', targetGridX, targetGridY, widthUnits, heightUnits)) {
+          // find another available
+          const pos = findAvailableGridPosition(widthUnits, heightUnits);
+          if (!pos) {
+            alert('画布已满，无法添加更多模块');
+            return;
+          }
+          template.gridX = pos.gridX;
+          template.gridY = pos.gridY;
+        } else {
+          template.gridX = targetGridX;
+          template.gridY = targetGridY;
+        }
+        addModuleFromTemplate(template);
+      } catch (err) {
+        console.warn('Failed to parse template drop', err);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 检查当前焦点是否在输入框、文本框或可编辑元素上
+      const activeElement = document.activeElement;
+      const isInputFocused =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement?.getAttribute('contenteditable') === 'true';
+
+      // 如果正在输入框中编辑，不触发删除模块操作
+      if (isInputFocused) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        if (selectedModuleIds.length > 0) {
+          // 批量删除
+          selectedModuleIds.forEach((id) => handleDeleteModule(id));
+        } else if (selectedModuleId) {
+          // 单个删除
+          handleDeleteModule(selectedModuleId);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedModuleId, selectedModuleIds]);
+
+  const [modules, setModules] = useState<ModuleData[]>([
+    {
+      id: 'top-left',
+      icon: Plane,
+      iconName: 'Plane',
+      position: { left: 137, top: 240, width: 387, height: 387, borderRadius: 91 },
+      gridX: 1,
+      gridY: 1,
+      widthUnits: 2,
+      heightUnits: 2,
+      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+      iconColor: '#4A5FBE',
+      iconBackgroundColor: '#000000',
+    },
+    {
+      id: 'top-right',
+      icon: Music,
+      iconName: 'Music',
+      position: { left: 556, top: 240, width: 387, height: 387, borderRadius: 91 },
+      gridX: 3,
+      gridY: 1,
+      widthUnits: 2,
+      heightUnits: 2,
+      backgroundColor: 'rgba(255, 69, 180, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+    {
+      id: 'flashlight',
+      icon: Flashlight,
+      iconName: 'Flashlight',
+      position: { left: 137, top: 870, width: 177, height: 177, borderRadius: 142 },
+      gridX: 1,
+      gridY: 4,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(255, 217, 61, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+    {
+      id: 'alarm',
+      icon: AlarmClock,
+      iconName: 'AlarmClock',
+      position: { left: 347, top: 870, width: 177, height: 177, borderRadius: 142 },
+      gridX: 2,
+      gridY: 4,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(255, 217, 61, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+    {
+      id: 'brightness',
+      icon: Sun,
+      iconName: 'Sun',
+      position: { left: 557, top: 870, width: 177, height: 386, borderRadius: 62 },
+      gridX: 3,
+      gridY: 4,
+      widthUnits: 1,
+      heightUnits: 2,
+      gradient: 'linear-gradient(to bottom, rgba(255, 217, 61, 0.85) 0%, rgba(245, 245, 220, 0.85) 100%)',
+      iconColor: '#4A5FBE',
+      percentage: 70,
+      percentageColor: 'rgba(255, 255, 255, 0.4)',
+    },
+    {
+      id: 'volume',
+      icon: Volume2,
+      iconName: 'Volume2',
+      position: { left: 767, top: 870, width: 177, height: 386, borderRadius: 62 },
+      gridX: 4,
+      gridY: 4,
+      widthUnits: 1,
+      heightUnits: 2,
+      backgroundColor: 'rgba(211, 211, 211, 0.85)',
+      iconColor: '#FFFFFF',
+      percentage: 50,
+      percentageColor: 'rgba(255, 255, 255, 0.4)',
+    },
+    {
+      id: 'mode-moon',
+      icon: Moon,
+      iconName: 'Moon',
+      position: { left: 137, top: 1080, width: 387, height: 177, borderRadius: 62 },
+      gridX: 1,
+      gridY: 5,
+      widthUnits: 2,
+      heightUnits: 1,
+      backgroundColor: 'rgba(245, 245, 220, 0.85)',
+      borderColor: 'rgba(139, 139, 122, 0.3)',
+      iconColor: '#4A5FBE',
+    },
+    {
+      id: 'calculator',
+      icon: Calculator,
+      iconName: 'Calculator',
+      position: { left: 347, top: 1290, width: 177, height: 177, borderRadius: 142 },
+      gridX: 2,
+      gridY: 6,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(255, 107, 107, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+    {
+      id: 'camera',
+      icon: Camera,
+      iconName: 'Camera',
+      position: { left: 557, top: 1290, width: 177, height: 177, borderRadius: 142 },
+      gridX: 3,
+      gridY: 6,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(74, 144, 226, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+    {
+      id: 'rotation-lock',
+      icon: RotateCw,
+      iconName: 'RotateCw',
+      position: { left: 557, top: 660, width: 177, height: 177, borderRadius: 142 },
+      gridX: 3,
+      gridY: 3,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(245, 245, 220, 0.85)',
+      borderColor: 'rgba(139, 139, 122, 0.3)',
+      iconColor: '#4A5FBE',
+    },
+    {
+      id: 'bell',
+      icon: Bell,
+      iconName: 'Bell',
+      position: { left: 767, top: 660, width: 177, height: 177, borderRadius: 142 },
+      gridX: 4,
+      gridY: 3,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(245, 245, 220, 0.85)',
+      borderColor: 'rgba(139, 139, 122, 0.3)',
+      iconColor: '#4A5FBE',
+    },
+    {
+      id: 'battery',
+      icon: Battery,
+      iconName: 'Battery',
+      position: { left: 767, top: 1290, width: 177, height: 177, borderRadius: 142 },
+      gridX: 4,
+      gridY: 6,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(76, 217, 100, 0.85)',
+      iconColor: '#FFFFFF',
+    },
+  ]);
+
+  useEffect(() => {
+    if (historyIndex === -1) {
+      pushHistory({ modules, backgroundLayers, backgroundBlur });
+    }
+  }, []);
+
+  const handleModuleUpdate = (moduleId: string, updates: Partial<ModuleData>) => {
+    const nextModules = modules.map((module) => {
+      if (module.id !== moduleId) {
+        return module;
+      }
+
+      const updatedGridX = updates.gridX ?? module.gridX;
+      const updatedGridY = updates.gridY ?? module.gridY;
+      const updatedWidthUnits = updates.widthUnits ?? module.widthUnits;
+      const updatedHeightUnits = updates.heightUnits ?? module.heightUnits;
+
+      if (
+        !isGridPositionAvailable(
+          moduleId,
+          updatedGridX,
+          updatedGridY,
+          updatedWidthUnits,
+          updatedHeightUnits
+        )
+      ) {
+        return module;
+      }
+
+      return { ...module, ...updates };
+    });
+    commitCanvasState(nextModules);
+  };
+
+  const handleBatchModuleUpdate = (moduleIds: string[], updates: Partial<ModuleData>) => {
+    const nextModules = modules.map((module) => {
+      if (!moduleIds.includes(module.id)) {
+        return module;
+      }
+      return { ...module, ...updates };
+    });
+    commitCanvasState(nextModules);
+  };
+
+  const handleAddModule = () => {
+    const id = `module-${Date.now()}`;
+    const position = findAvailableGridPosition(1, 1);
+    if (!position) {
+      return;
+    }
+
+    const newModule: ModuleData = {
+      id,
+      icon: null,
+      iconName: '',
+      position: { left: gridOriginLeft, top: gridOriginTop, width: gridCellWidth, height: gridCellHeight, borderRadius: 142 },
+      gridX: position.gridX,
+      gridY: position.gridY,
+      widthUnits: 1,
+      heightUnits: 1,
+      backgroundColor: 'rgba(102, 126, 234, 0.85)',
+      iconColor: '#FFFFFF',
+    };
+    const nextModules = [...modules, newModule];
+    commitCanvasState(nextModules);
+    setSelectedModuleId(id);
+    setSelectedModuleIds([]);
+  };
+
+  const addModuleFromTemplate = (template: ModuleTemplate) => {
+    const id = `module-${Date.now()}`;
+    const position = findAvailableGridPosition(template.widthUnits, template.heightUnits);
+    if (!position) {
+      alert('画布已满，无法添加更多模块');
+      return;
+    }
+
+    const newModule: ModuleData = {
+      ...template,
+      id,
+      gridX: position.gridX,
+      gridY: position.gridY,
+      position: {
+        left: gridOriginLeft,
+        top: gridOriginTop,
+        width: template.widthUnits * gridCellWidth + (template.widthUnits - 1) * gridGap,
+        height: template.heightUnits * gridCellHeight + (template.heightUnits - 1) * gridGap,
+        borderRadius: template.position.borderRadius,
+      },
+      iconBackgroundColor: template.iconBackgroundColor,
+    };
+    const nextModules = [...modules, newModule];
+    commitCanvasState(nextModules);
+    setSelectedModuleId(id);
+    setSelectedModuleIds([]);
+  };
+
+  const handleDeleteModule = (moduleId: string) => {
+    const nextModules = modules.filter((module) => module.id !== moduleId);
+    commitCanvasState(nextModules);
+    if (selectedModuleId === moduleId) {
+      setSelectedModuleId(null);
+    }
+    setSelectedModuleIds((prev) => prev.filter((id) => id !== moduleId));
+  };
+
+  const addBackgroundLayer = (src: string, name: string) => {
+    const id = `bg-${Date.now()}`;
+    const nextBackgroundLayers = [...backgroundLayers, { id, src, name, cutout: false, opacity: 1, blendMode: 'normal', scale: 1, positionX: 0, positionY: 0, fit: 'contain' as const }];
+    commitCanvasState(modules, nextBackgroundLayers);
+  };
+
+  const updateBackgroundLayer = (layerId: string, updates: Partial<BackgroundLayer>) => {
+    const nextBackgroundLayers = backgroundLayers.map((layer) =>
+      layer.id === layerId ? { ...layer, ...updates } : layer
+    );
+    commitCanvasState(modules, nextBackgroundLayers);
+  };
+
+  const removeBackgroundLayer = (layerId: string) => {
+    const nextBackgroundLayers = backgroundLayers.filter((layer) => layer.id !== layerId);
+    commitCanvasState(modules, nextBackgroundLayers);
+  };
+
+  const moveBackgroundLayer = (layerId: string, direction: 'up' | 'down') => {
+    const index = backgroundLayers.findIndex((layer) => layer.id === layerId);
+    if (index === -1) return;
+    const nextIndex = direction === 'up' ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= backgroundLayers.length) return;
+    const copy = [...backgroundLayers];
+    const temp = copy[index];
+    copy[index] = copy[nextIndex];
+    copy[nextIndex] = temp;
+    commitCanvasState(modules, copy);
+  };
+
+  const clearBackgroundLayers = () => {
+    commitCanvasState(modules, [], 0);
+  };
+
+  const selectedModule = modules.find((m) => m.id === selectedModuleId);
+  const selectedModules = modules.filter((m) => selectedModuleIds.includes(m.id));
+  const [uploadedImages, setUploadedImages] = useState<Array<{id: string; dataURL: string; name?: string}>>([]);
+  // UI states for drag & drop
+  const [isCanvasDragActive, setIsCanvasDragActive] = useState<boolean>(false);
+  const [hoveredModuleIdDuringDrag, setHoveredModuleIdDuringDrag] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [flashingModuleId, setFlashingModuleId] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [previewHistory, setPreviewHistory] = useState<Array<{id: string; dataURL: string; createdAt: number}>>([]);
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('previewHistory');
+      if (raw) setPreviewHistory(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const saveHistoryToStorage = (next: typeof previewHistory) => {
+    try {
+      localStorage.setItem('previewHistory', JSON.stringify(next));
+    } catch {}
+  };
+
+  const capturePreview = async () => {
+    if (!previewRef.current) return null;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const el = previewRef.current as HTMLElement;
+      // hide texture overlays (they have pointer-events-none) and store originals
+      const overlays = Array.from(el.querySelectorAll('.pointer-events-none')) as HTMLElement[];
+      const overlayDisplays = overlays.map((o) => o.style.display || '');
+      const origBorderRadius = el.style.borderRadius;
+      const origBoxShadow = el.style.boxShadow;
+      // prepare backup arrays so finally can restore even if try block throws
+      let svgBackups: Array<{ el: Element; attrs: Record<string, string>; styleColor?: string }> = [];
+      let bgBackups: Array<{ el: HTMLElement; background?: string; backgroundImage?: string; backgroundColor?: string; backgroundRepeat?: string; backgroundSize?: string }> = [];
+      // collect temp css rules for locking per-element radii
+      const perElemRules: string[] = [];
+      const tempStyle = document.createElement('style');
+      tempStyle.setAttribute('data-capture-fix', '1');
+      try {
+        // hide overlays
+        overlays.forEach((o) => (o.style.display = 'none'));
+        el.style.boxShadow = 'none';
+
+        // insert a backdrop to avoid black/transparent checkerboard when backgrounds fail to load
+        const compEl = window.getComputedStyle(el);
+        const backdrop = document.createElement('div');
+        backdrop.setAttribute('data-capture-backdrop', '1');
+        backdrop.style.position = 'absolute';
+        backdrop.style.inset = '0';
+        backdrop.style.zIndex = '-1';
+        backdrop.style.background = compEl.backgroundColor || '#000';
+        el.insertBefore(backdrop, el.firstChild);
+
+        // disable pseudo-elements, blend modes and backdrop filters globally for capture
+        tempStyle.innerHTML = `
+          .capture-fix *::before, .capture-fix *::after { display: none !important; background: none !important; }
+          .capture-fix * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; filter: none !important; }
+        `;
+        document.head.appendChild(tempStyle);
+        el.classList.add('capture-fix');
+
+        // prepare elements list
+        const allElems = Array.from(el.querySelectorAll<HTMLElement>('*')).concat(el as HTMLElement);
+
+        // preload background-image URLs found in computed styles
+        const bgUrls = new Set<string>();
+        const urlRe = /url\((?:"|'|)(.*?)(?:"|'|)\)/i;
+        allElems.forEach((e, idx) => {
+          try {
+            const comp = window.getComputedStyle(e);
+            // backup current inline background-related styles
+            bgBackups.push({ el: e, background: e.style.background || '', backgroundImage: e.style.backgroundImage || '', backgroundColor: e.style.backgroundColor || '', backgroundRepeat: e.style.backgroundRepeat || '', backgroundSize: e.style.backgroundSize || '' });
+            const bgImage = comp.backgroundImage || '';
+            const m = bgImage && bgImage !== 'none' ? bgImage.match(urlRe) : null;
+            if (m && m[1]) {
+              const url = m[1];
+              if (url && !url.startsWith('data:')) bgUrls.add(url);
+            }
+          } catch (err) {}
+        });
+
+        // helper to load an image via Image() and return success flag
+        const loadImg = (url: string, timeout = 4000) => new Promise<boolean>((resolve) => {
+          try {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            let done = false;
+            const onSuccess = () => { if (done) return; done = true; resolve(true); };
+            const onFail = () => { if (done) return; done = true; resolve(false); };
+            const tid = setTimeout(() => { onFail(); }, timeout);
+            img.onload = () => { clearTimeout(tid); onSuccess(); };
+            img.onerror = () => { clearTimeout(tid); onFail(); };
+            img.src = url;
+          } catch (err) { resolve(false); }
+        });
+
+        // attempt to preload all background urls in parallel (best-effort)
+        const loadPromises: Array<Promise<boolean>> = [];
+        bgUrls.forEach((u) => loadPromises.push(loadImg(u)));
+        const results = await Promise.allSettled(loadPromises);
+
+        // lock per-element border-radius and disable mask/clip-path by injecting per-element rules
+        allElems.forEach((e, i) => {
+          try {
+            const comp = window.getComputedStyle(e);
+            const rad = comp.borderRadius || '0px';
+            const id = `cap-${Date.now()}-${i}`;
+            e.setAttribute('data-capture-id', id);
+            perElemRules.push(`[data-capture-id="${id}"]{ border-radius: ${rad} !important; -webkit-mask-image: none !important; mask-image: none !important; clip-path: none !important; overflow: hidden !important; }
+`);
+          } catch (err) {}
+        });
+
+        // append per-element css rules
+        if (perElemRules.length > 0) {
+          tempStyle.innerHTML += '\n' + perElemRules.join('\n');
+        }
+
+        // ensure SVG/icon stroke colors are explicit inline so html2canvas captures strokes correctly
+        const svgElements = Array.from(el.querySelectorAll<SVGSVGElement>('svg'));
+        try {
+          svgElements.forEach((svg) => {
+            try {
+              svgBackups.push({ el: svg, attrs: { fill: (svg.getAttribute('fill') || ''), stroke: (svg.getAttribute('stroke') || '') }, styleColor: (svg as unknown as HTMLElement).style.color || '' });
+              const children = Array.from(svg.querySelectorAll<SVGElement>('*'));
+              children.forEach((child) => {
+                try {
+                  const strokeAttr = child.getAttribute('stroke');
+                  const comp = window.getComputedStyle(child as Element);
+                  const compColor = comp.color || '';
+                  if ((!strokeAttr || strokeAttr === 'none') && compColor) {
+                    try { child.setAttribute('stroke', compColor); } catch (e) {}
+                  }
+                } catch (err) {}
+              });
+            } catch (err) {}
+          });
+        } catch (err) {}
+
+        // choose capture scale for high-quality output (clamped)
+        const deviceScale = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const canvas = await html2canvas(el as HTMLElement, { useCORS: true, allowTaint: false, logging: false, scale: deviceScale, backgroundColor: compEl.backgroundColor || '#000' });
+        // Ensure exported image is 9:16 and width in [720,1280]
+        const origWidth = canvas.width;
+        const clampedWidth = Math.max(720, Math.min(1280, origWidth));
+        const targetWidth = clampedWidth;
+        const targetHeight = Math.round((targetWidth * 16) / 9);
+        let finalDataURL = canvas.toDataURL('image/png');
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          const tmp = document.createElement('canvas');
+          tmp.width = targetWidth;
+          tmp.height = targetHeight;
+          const ctx = tmp.getContext('2d');
+          if (ctx) {
+            // draw with smoothing
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, targetWidth, targetHeight);
+            finalDataURL = tmp.toDataURL('image/png');
+          }
+        }
+        const id = `preview-${Date.now()}`;
+        const next = [{ id, dataURL: finalDataURL, createdAt: Date.now() }, ...previewHistory].slice(0, 50);
+        setPreviewHistory(next);
+        saveHistoryToStorage(next);
+        return finalDataURL;
+      } finally {
+        // restore
+        overlays.forEach((o, i) => (o.style.display = overlayDisplays[i]));
+        // remove temporary class and stylesheet
+        try {
+          el.classList.remove('capture-fix');
+          const ts = document.head.querySelector('style[data-capture-fix]');
+          if (ts && ts.parentNode) ts.parentNode.removeChild(ts);
+        } catch (err) {}
+
+        // restore SVG attributes
+        try {
+          const svgs = Array.from(el.querySelectorAll<SVGElement>('svg'));
+          for (const s of svgs) {
+            const found = svgBackups.find((b) => b.el === s);
+            if (found) {
+              try { if (found.attrs && 'stroke' in found.attrs) {
+                const val = found.attrs.stroke || '';
+                if (val) s.setAttribute('stroke', val); else s.removeAttribute('stroke');
+              } } catch (err) {}
+              try { if (found.attrs && 'fill' in found.attrs) {
+                const val = found.attrs.fill || '';
+                if (val) s.setAttribute('fill', val); else s.removeAttribute('fill');
+              } } catch (err) {}
+              try { if (found.styleColor !== undefined) (s as unknown as HTMLElement).style.color = found.styleColor || ''; } catch (err) {}
+            }
+          }
+        } catch (err) {}
+
+        // restore gradient/pattern backgrounds
+        try {
+          for (const b of bgBackups) {
+            try {
+              b.el.style.background = b.background || '';
+              b.el.style.backgroundImage = b.backgroundImage || '';
+              b.el.style.backgroundColor = b.backgroundColor || '';
+              b.el.style.backgroundRepeat = b.backgroundRepeat || '';
+              b.el.style.backgroundSize = b.backgroundSize || '';
+            } catch (err) {}
+          }
+        } catch (err) {}
+        el.style.borderRadius = origBorderRadius;
+        el.style.boxShadow = origBoxShadow;
+      }
+    } catch (err) {
+      console.error('capture failed', err);
+      return null;
+    }
+  };
+
+  const handleSavePreview = async () => {
+    const dataURL = await capturePreview();
+    if (!dataURL) return;
+    // trigger download
+    const a = document.createElement('a');
+    a.href = dataURL;
+    a.download = `preview-${new Date().toISOString()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  // New image save handler per request: scale=4, onclone adjustments
+  const handleSaveImage = async () => {
+    if (!previewRef.current) return;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const el = previewRef.current as HTMLElement;
+
+      // onclone handler: adjust cloned DOM to replace backdrop-filter with solid background and inset shadow
+      const onclone = (clonedDoc: Document) => {
+        try {
+          const clonedRoot = clonedDoc.querySelector('[data-phone-canvas]') as HTMLElement | null;
+          if (clonedRoot) {
+            clonedRoot.style.overflow = 'hidden';
+            clonedRoot.style.display = 'block';
+          }
+
+          const modulesInClone = Array.from(clonedDoc.querySelectorAll('[data-module-id]')) as HTMLElement[];
+          modulesInClone.forEach((node) => {
+            try {
+              // check for backdrop-filter (inline or computed)
+              const inlineBF = node.style.backdropFilter || (node.style as any).webkitBackdropFilter || (node.style as any)['-webkit-backdrop-filter'];
+              const comp = clonedDoc.defaultView ? clonedDoc.defaultView.getComputedStyle(node) : null;
+              const compBF = comp ? comp.backdropFilter || (comp as any)['-webkit-backdrop-filter'] : '';
+              if (inlineBF || compBF) {
+                // remove backdrop filters
+                try { node.style.backdropFilter = 'none'; } catch (e) {}
+                try { (node.style as any).webkitBackdropFilter = 'none'; } catch (e) {}
+                // set fallback background color and inset shadow to simulate blur
+                try { node.style.backgroundColor = 'rgba(255, 255, 255, 0.85)'; } catch (e) {}
+                try { node.style.boxShadow = 'inset 0 0 10px rgba(255,255,255,0.5)'; } catch (e) {}
+              }
+            } catch (err) {}
+          });
+        } catch (err) {
+          // ignore clone errors
+        }
+      };
+
+      // perform capture with scale 4
+      const canvas = await html2canvas(el as HTMLElement, {
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        scale: 4,
+        onclone,
+        backgroundColor: window.getComputedStyle(el).backgroundColor || '#000'
+      });
+
+      // convert and save like existing logic (preserve history)
+      let finalDataURL = canvas.toDataURL('image/png');
+      const id = `preview-${Date.now()}`;
+      const next = [{ id, dataURL: finalDataURL, createdAt: Date.now() }, ...previewHistory].slice(0, 50);
+      setPreviewHistory(next);
+      saveHistoryToStorage(next);
+
+      // trigger download with same filename pattern
+      const a = document.createElement('a');
+      a.href = finalDataURL;
+      a.download = `preview-${new Date().toISOString()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      console.error('handleSaveImage failed', err);
+    }
+  };
+
+  // 用户提供的 html2canvas 导出实现（已移至模块顶层导出）
+
+  const exportFullPreview = async (elementId: string) => {
+    const node = document.getElementById(elementId) as HTMLElement | null;
+    if (!node) return;
+
+    const scale = 3; // 高清倍数
+
+    // 目标像素尺寸
+    const targetWidth = Math.round(node.offsetWidth * scale);
+    const targetHeight = Math.round(node.offsetHeight * scale);
+
+    // 创建一个离屏容器，尺寸等于目标像素尺寸，确保导出填满整张图且无圆角
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-99999px';
+    wrapper.style.top = '-99999px';
+    wrapper.style.width = `${targetWidth}px`;
+    wrapper.style.height = `${targetHeight}px`;
+    wrapper.style.overflow = 'hidden';
+    wrapper.style.background = window.getComputedStyle(node).backgroundColor || 'transparent';
+    wrapper.style.display = 'block';
+    wrapper.style.borderRadius = '0px';
+
+    // 克隆节点并应用 scale，放在左上角 (0,0)
+    const clone = node.cloneNode(true) as HTMLElement;
+    // remove any zoom from the original (preview uses zoom) so clone renders at logical size
+    try { clone.style.zoom = '1'; } catch (err) {}
+    // ensure no pre-existing transform interferes
+    try { clone.style.transform = 'none'; } catch (err) {}
+    // then apply scale to reach target pixel size
+    clone.style.transform = `scale(${scale})`;
+    clone.style.transformOrigin = 'top left';
+    clone.style.width = `${node.offsetWidth}px`;
+    clone.style.height = `${node.offsetHeight}px`;
+    clone.style.borderRadius = '0px';
+    clone.style.overflow = 'hidden';
+    clone.style.display = 'block';
+    clone.style.position = 'absolute';
+    clone.style.left = '0';
+    clone.style.top = '0';
+    clone.style.margin = '0';
+
+    wrapper.appendChild(clone);
+    // 给 wrapper 一个可定位的 id，方便 CSS 选择器作用域化
+    const wrapperId = `export-wrapper`;
+    wrapper.id = wrapperId;
+    document.body.appendChild(wrapper);
+
+    // 注入导出专用的清理样式：隐藏伪元素、去掉背景纹理/图片、移除阴影和边框
+    try {
+      const styleEl = document.createElement('style');
+      styleEl.setAttribute('data-export-clean', '1');
+      styleEl.innerHTML = `
+        #${wrapperId} * { background-image: none !important; background: transparent !important; background-color: transparent !important; box-shadow: none !important; border: none !important; outline: none !important; }
+        #${wrapperId} *::before, #${wrapperId} *::after { display: none !important; background: none !important; box-shadow: none !important; border: none !important; content: none !important; }
+        #${wrapperId} svg, #${wrapperId} svg * { stroke: none !important; filter: none !important; }
+        #${wrapperId} [class*="grid"], #${wrapperId} [class*="line"], #${wrapperId} [class*="border"], #${wrapperId} [data-grid], #${wrapperId} [data-line] { display: none !important; }
+        #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+      `;
+      wrapper.insertBefore(styleEl, wrapper.firstChild);
+    } catch (err) {
+      // 忽略样式注入失败
+    }
+
+    // 进一步用 JS 清理：移除非常细的线条元素和图标周围的小近黑方块
+    try {
+      const elems = Array.from(wrapper.querySelectorAll<HTMLElement>('*'));
+      elems.forEach((el) => {
+        try {
+          const cs = window.getComputedStyle(el);
+          const w = el.offsetWidth || parseFloat(cs.width || '0');
+          const h = el.offsetHeight || parseFloat(cs.height || '0');
+
+          // 细线（通常为网格线） -> 移除
+          if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) {
+            if (el.parentNode) el.parentNode.removeChild(el);
+            return;
+          }
+
+          // 近黑色小方块（图标周围的暗框） -> 透明化并去掉阴影边框
+          const bg = cs.backgroundColor || '';
+          const rgbMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/);
+          let isNearBlack = false;
+          if (rgbMatch) {
+            const r = parseInt(rgbMatch[1], 10);
+            const g = parseInt(rgbMatch[2], 10);
+            const b = parseInt(rgbMatch[3], 10);
+            const a = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1;
+            const luminance = (0.299 * r + 0.587 * g + 0.114 * b) * a;
+            if (luminance < 40) isNearBlack = true;
+          }
+          const approxSquare = Math.abs(w - h) <= Math.max(6, Math.min(w, h) * 0.25);
+          if (isNearBlack && w >= 10 && h >= 10 && approxSquare) {
+            el.style.background = 'transparent';
+            el.style.backgroundColor = 'transparent';
+            el.style.boxShadow = 'none';
+            el.style.border = 'none';
+          }
+
+          // 明确标记为网格或线的元素，直接隐藏
+          const cls = (el.className || '').toString().toLowerCase();
+          if (cls.includes('grid') || cls.includes('line') || cls.includes('border')) {
+            el.style.display = 'none';
+          }
+        } catch (err) {}
+      });
+    } catch (err) {}
+
+    const param = {
+      width: targetWidth,
+      height: targetHeight,
+      style: {
+        width: `${targetWidth}px`,
+        height: `${targetHeight}px`,
+        transform: 'none',
+        transformOrigin: 'top left',
+        borderRadius: '0px',
+        display: 'block',
+        overflow: 'hidden'
+      },
+      quality: 1,
+      copyDefaultStyles: true,
+      cacheBust: true,
+    } as any;
+
+    try {
+      const dataUrl = await domtoimage.toPng(wrapper, param);
+      const link = document.createElement('a');
+      link.download = `ControlCenter_HD_${Date.now()}.png`;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error('导出失败:', error);
+      alert('导出高清图片失败，请检查网络或控制台错误');
+    } finally {
+      // 清理临时节点
+      try { if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper); } catch (err) {}
+    }
+  };
+
+  const openLatestPreview = () => {
+    if (!previewHistory || previewHistory.length === 0) return;
+    const url = previewHistory[0].dataURL;
+    if (!url) return;
+    window.open(url, '_blank');
+  };
+
+  const [debugSample, setDebugSample] = useState<string | null>(null);
+  const checkLatestPreviewColor = async () => {
+    try {
+      const raw = localStorage.getItem('previewHistory');
+      if (!raw) return setDebugSample('no-history');
+      const arr = JSON.parse(raw);
+      if (!arr || arr.length === 0) return setDebugSample('empty');
+      const dataURL = arr[0].dataURL;
+      if (!dataURL) return setDebugSample('no-data');
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = dataURL;
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej();
+      });
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d');
+      if (!ctx) return setDebugSample('no-canvas');
+      ctx.drawImage(img, 0, 0);
+      const sx = Math.floor(img.width * 0.15);
+      const sy = Math.floor(img.height * 0.15);
+      const d = ctx.getImageData(sx, sy, 1, 1).data;
+      setDebugSample(`rgba(${d[0]}, ${d[1]}, ${d[2]}, ${d[3]})`);
+    } catch (err) {
+      setDebugSample('err');
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', width: '100vw', height: '100vh', background: 'linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%)', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
+      <style>{`@keyframes spin { from {transform: rotate(0deg);} to {transform: rotate(360deg);} }`}</style>
+      {/* 左侧：模块库 */}
+      <div style={{ width: '300px', background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', boxShadow: '2px 0 20px rgba(0,0,0,0.3)' }}>
+        <div style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start', background: 'linear-gradient(135deg, #2a5298 0%, #1e3a5f 100%)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.04)' }}>
+              <Sparkles color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: '18px', fontWeight: 800, marginBottom: '4px' }}>模块库</div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>上传图片后可拖拽到模块图标上</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
+          <div style={{ display: 'grid', gap: '12px' }}>
+            {/* 上传图片区已移至页面底部独立模块 */}
+            
+            {moduleTemplates.map((template, index) => {
+              return (
+                <button
+                  draggable
+                  key={`${template.iconName}-${index}`}
+                  title={template.label || template.iconName}
+                  onClick={() => addModuleFromTemplate(template)}
+                  onDragStart={(e) => {
+                    try {
+                      e.dataTransfer?.setData('application/json', JSON.stringify(template));
+                      e.dataTransfer!.effectAllowed = 'copy';
+                    } catch {}
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    width: '100%',
+                    border: '1px solid rgba(255,255,255,0.04)',
+                    borderRadius: '14px',
+                    padding: '16px',
+                    background: 'rgba(255,255,255,0.02)',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                    justifyContent: 'flex-start',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                  }}
+                >
+                  <div
+                    style={{
+                      width: template.widthUnits === 2 ? '100px' : '52px',
+                      height: template.heightUnits === 2 ? '100px' : '52px',
+                      borderRadius: template.position.borderRadius / 3,
+                      background: template.gradient || template.backgroundColor || '#4A90E2',
+                      display: 'grid',
+                      placeItems: 'center',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      backdropFilter: 'blur(8px)',
+                    }}
+                  />
+                  <div style={{ textAlign: 'left', flex: 1 }}>
+                    <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>{template.label || template.iconName}</div>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+                      {template.widthUnits}×{template.heightUnits} 网格
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 底部独立上传模块（固定定位，不占用模块库空间） */}
+      <div style={{ position: 'fixed', left: 20, bottom: 20, width: 300, background: 'linear-gradient(180deg, #141414, #0f0f0f)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 12, padding: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', zIndex: 9999 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            title={'上传图片（点击或拖拽到这里）'}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={async (e) => {
+              e.preventDefault();
+              const file = e.dataTransfer?.files?.[0];
+              if (file) {
+                await handleAddUploadedFile(file);
+              }
+            }}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              display: 'grid',
+              placeItems: 'center',
+              background: isAnalyzing ? 'linear-gradient(90deg,#8b5cf6,#7c3aed)' : 'linear-gradient(90deg,#7c3aed,#6d28d9)',
+              boxShadow: '0 6px 18px rgba(124,58,237,0.3)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            {isAnalyzing ? (
+              <div style={{ width: 20, height: 20, border: '3px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <Sparkles color="#fff" />
+            )}
+          </button>
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: 700 }}>上传图片</div>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>上传后可拖拽到模块图标上</div>
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (f) await handleAddUploadedFile(f);
+          }} />
+        </div>
+
+        {uploadedImages.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {uploadedImages.map((img) => (
+                <div
+                  key={img.id}
+                  draggable
+                  onDragStart={(e) => {
+                    try {
+                      e.dataTransfer?.setData('text/uri-list', img.dataURL);
+                      e.dataTransfer!.effectAllowed = 'copy';
+                    } catch {}
+                  }}
+                  style={{ width: 64, height: 64, borderRadius: 8, overflow: 'hidden', cursor: 'grab', border: '1px solid rgba(255,255,255,0.06)' }}
+                  title={img.name || '已上传图片'}
+                >
+                  <img src={img.dataURL} alt={img.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 中间：手机预览画板 */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', background: 'radial-gradient(circle at center, #1a1a1a 0%, #0f0f0f 100%)' }}>
+        <div
+          id="phone-canvas"
+          ref={previewRef}
+          data-phone-canvas={"true"}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePreviewPointerUp}
+          onDragEnter={handlePreviewDragEnter}
+          onDragOver={handlePreviewDragOver}
+          onDragLeave={handlePreviewDragLeave}
+          onDrop={handlePreviewDrop}
+          style={{
+            width: '1080px',
+            height: '1920px',
+            position: 'relative',
+            zoom,
+            borderRadius: '120px',
+            border: isCanvasDragActive ? '12px solid rgba(100,200,255,0.6)' : '12px solid #1a1a1a',
+            overflow: 'hidden',
+            background: '#0a0a0a',
+            boxShadow: isCanvasDragActive ? '0 60px 120px rgba(100,200,255,0.06), 0 0 0 2px rgba(100,200,255,0.02)' : '0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)',
+          }}
+        >
+          <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+            {backgroundLayers.map((layer) => {
+              const scale = (layer.scale || 1) * 1.04;
+              const posX = layer.positionX || 0;
+              const posY = layer.positionY || 0;
+              const fit = layer.fit || 'contain';
+              return (
+                <div
+                  key={layer.id}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    backgroundImage: `url(${layer.src})`,
+                    backgroundSize: fit,
+                    backgroundPosition: 'center',
+                    backgroundRepeat: 'no-repeat',
+                    opacity: layer.opacity,
+                    filter: `${layer.cutout ? 'contrast(150%) saturate(0%) brightness(200%)' : ''} blur(${backgroundBlur}px)`,
+                    mixBlendMode: layer.blendMode as any,
+                    transform: `scale(${scale}) translate(${posX}px, ${posY}px)`,
+                  }}
+                />
+              );
+            })}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%)' }} />
+          </div>
+
+          {/* 网格线 */}
+          <div
+            style={{
+              position: 'absolute',
+              left: gridOriginLeft,
+              top: gridOriginTop,
+              width: gridWidth,
+              height: gridHeight,
+              pointerEvents: 'none',
+            }}
+          >
+            {/* 保存预览 & 历史按钮 已移至控制中心底部（避免 pointerEvents:none 覆盖） */}
+            {Array.from({ length: gridColumns + 1 }).map((_, index) => (
+              <div
+                key={`v-${index}`}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: index * (gridCellWidth + gridGap),
+                  width: 1,
+                  height: gridHeight,
+                  background: 'rgba(102, 126, 234, 0.1)',
+                }}
+              />
+            ))}
+            {Array.from({ length: gridRows + 1 }).map((_, index) => (
+              <div
+                key={`h-${index}`}
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: index * (gridCellHeight + gridGap),
+                  width: gridWidth,
+                  height: 1,
+                  background: 'rgba(102, 126, 234, 0.1)',
+                }}
+              />
+            ))}
+          </div>
+
+          {/* 模块 */}
+          {modules.map((m) => {
+            const IconTag = m.icon;
+            const modulePosition = getModulePositionFromGrid(m);
+            const isSelected = selectedModuleId === m.id || selectedModuleIds.includes(m.id);
+            const isDragging = draggingModuleId === m.id;
+            const isHoveringForFile = hoveredModuleIdDuringDrag === m.id;
+            const isFlashing = flashingModuleId === m.id;
+            return (
+              <div
+                data-module-id={m.id}
+                key={m.id}
+                onPointerDown={(event) => handleModuleDragStart(event, m.id)}
+                onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey) {
+                    // 多选模式
+                    if (selectedModuleIds.includes(m.id)) {
+                      setSelectedModuleIds(selectedModuleIds.filter(id => id !== m.id));
+                    } else {
+                      setSelectedModuleIds([...selectedModuleIds, m.id]);
+                    }
+                    setSelectedModuleId(null);
+                  } else {
+                    // 单选模式
+                    setSelectedModuleId(m.id);
+                    setSelectedModuleIds([]);
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  left: modulePosition.left,
+                  top: modulePosition.top,
+                  width: modulePosition.width,
+                  height: modulePosition.height,
+                  borderRadius: m.position.borderRadius,
+                  backgroundColor: m.customImage ? 'transparent' : (m.gradient ? undefined : m.backgroundColor),
+                  backgroundImage: m.customImage ? `url(${m.customImage})` : (m.gradient || undefined),
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                  backgroundRepeat: 'no-repeat',
+                  border: isSelected ? '5px solid rgba(255, 105, 180, 0.8)' : m.borderColor ? `2px solid ${m.borderColor}` : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  cursor: isDragging ? 'grabbing' : 'grab',
+                  boxSizing: 'border-box',
+                  overflow: 'hidden',
+                  userSelect: 'none',
+                  backdropFilter: m.customImage ? 'none' : 'blur(30px) saturate(180%)',
+                  WebkitBackdropFilter: m.customImage ? 'none' : 'blur(30px) saturate(180%)',
+                  transition: isDragging ? 'none' : 'all 0.18s ease',
+                  transform: isDragging ? 'scale(1.05)' : isHoveringForFile ? 'scale(1.06)' : isSelected ? 'scale(1.02)' : 'scale(1)',
+                  boxShadow: isFlashing
+                    ? '0 0 0 6px rgba(255,255,255,0.06), 0 24px 48px rgba(0,0,0,0.35)'
+                    : isHoveringForFile
+                      ? '0 18px 36px rgba(100, 200, 255, 0.12), 0 0 0 2px rgba(100,200,255,0.06)'
+                      : isSelected
+                        ? '0 20px 40px rgba(255, 105, 180, 0.3), 0 0 0 1px rgba(255, 105, 180, 0.2)'
+                        : '0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)',
+                  zIndex: isSelected ? 1000 : isDragging ? 999 : 1,
+                }}
+              >
+                {/* 自定义图标图片背景 */}
+                {m.customIcon && (
+                  <img
+                    src={m.customIcon}
+                    alt={m.iconName}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: m.position.borderRadius,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      zIndex: 1
+                    }}
+                  />
+                )}
+
+                {/* 百分比填充条 */}
+                {m.percentage !== undefined && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: `${m.percentage}%`,
+                    background: m.percentageColor || 'rgba(255, 255, 255, 0.3)',
+                    transition: 'height 0.2s ease',
+                    zIndex: 2
+                  }} />
+                )}
+
+                {/* 光泽效果 */}
+                {!m.customImage && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: '40%',
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%)',
+                    pointerEvents: 'none',
+                    borderRadius: `${m.position.borderRadius}px ${m.position.borderRadius}px 0 0`,
+                    zIndex: 5
+                  }} />
+                )}
+
+                {/* 左上角大方块模块内四个图标 */}
+                {m.id === 'top-left' && (
+                  <div style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', zIndex: 8, pointerEvents: 'none' }}>
+                    {[
+                      { left: 49, top: 51, Icon: Plane },
+                      { left: 205, top: 51, Icon: Wifi },
+                      { left: 49, top: 203, Icon: Bluetooth },
+                      { left: 205, top: 203, Icon: Radio },
+                    ].map((item, index) => (
+                      <div
+                        key={index}
+                        style={{
+                          position: 'absolute',
+                          left: `${item.left}px`,
+                          top: `${item.top}px`,
+                          width: '134px',
+                          height: '134px',
+                          borderRadius: '148px',
+                          opacity: 1,
+                          background: m.iconBackgroundColor || 'transparent',
+                          boxSizing: 'border-box',
+                          border: m.iconBackgroundColor ? `5px solid ${m.iconBackgroundColor}` : undefined,
+                          display: 'grid',
+                          placeItems: 'center',
+                        }}
+                      >
+                        <item.Icon size={56} color={m.iconColor || '#ffffff'} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 图标 */}
+                {IconTag && m.id !== 'top-left' && (
+                  <div
+                    style={{
+                      position: 'relative',
+                      zIndex: 10,
+                      width: m.iconBackgroundColor ? '104px' : 'auto',
+                      height: m.iconBackgroundColor ? '104px' : 'auto',
+                      borderRadius: m.iconBackgroundColor ? '52px' : undefined,
+                      backgroundColor: m.iconBackgroundColor || 'transparent',
+                      display: 'grid',
+                      placeItems: 'center',
+                      padding: m.iconBackgroundColor ? '10px' : undefined,
+                    }}
+                  >
+                    <IconTag
+                      size={80}
+                      color={m.iconColor}
+                      strokeWidth={2.5}
+                      style={{
+                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
+                        position: 'relative',
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* 标签 */}
+                {m.label && (
+                  <span style={{
+                    fontSize: '26px',
+                    color: m.iconColor,
+                    marginTop: '12px',
+                    fontWeight: 600,
+                    textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    letterSpacing: '-0.5px',
+                    position: 'relative',
+                    zIndex: 10
+                  }}>
+                    {m.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+
+          {/* 历史面板（右下弹窗） */}
+          {historyOpen && (
+            <div style={{ position: 'absolute', right: 14, top: 14, width: 340, maxHeight: 420, overflow: 'auto', background: 'rgba(15,15,15,0.98)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, padding: 12, zIndex: 10000 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontWeight: 700 }}>预览历史</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{previewHistory.length} 项</div>
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {previewHistory.map((h) => (
+                  <div key={h.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <img src={h.dataURL} style={{ width: 88, height: 160, objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.04)' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>保存于 {new Date(h.createdAt).toLocaleString()}</div>
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                        <button onClick={() => {
+                          const w = window.open(h.dataURL, '_blank');
+                          if (w) w.focus();
+                        }} style={{ padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.04)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}>查看</button>
+                        <button onClick={() => {
+                          // download
+                          const a = document.createElement('a');
+                          a.href = h.dataURL;
+                          a.download = `${h.id}.png`;
+                          document.body.appendChild(a);
+                          a.click();
+                          a.remove();
+                        }} style={{ padding: '6px 8px', borderRadius: 6, background: 'linear-gradient(90deg,#7c3aed,#06b6d4)', color: '#fff', border: 'none', cursor: 'pointer' }}>下载</button>
+                        <button onClick={() => {
+                          const next = previewHistory.filter(p => p.id !== h.id);
+                          setPreviewHistory(next);
+                          saveHistoryToStorage(next);
+                        }} style={{ padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.02)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}>删除</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 右侧：编辑面板 */}
+      <div style={{ width: '440px', background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)', color: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 20px rgba(0,0,0,0.3)' }}>
+        <div style={{ padding: '28px 28px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'linear-gradient(135deg, #2a5298 0%, #1e3a5f 100%)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 800, marginBottom: '6px', letterSpacing: '-0.5px', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>控制中心定制</div>
+              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.75)', lineHeight: '1.4' }}>自定义你的专属控制中心</div>
+            </div>
+            <button
+              onClick={handleAddModule}
+              style={{
+                padding: '12px 20px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '16px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '14px',
+                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 8px 20px rgba(102, 126, 234, 0.5)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+              }}
+            >
+              + 新增模块
+            </button>
+          </div>
+        </div>
+
+        {/* 选项卡 */}
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.2)' }}>
+          <button
+            onClick={() => setSelectedTab('module')}
+            style={{
+              flex: 1,
+              padding: '18px 0',
+              background: selectedTab === 'module' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
+              color: selectedTab === 'module' ? '#fff' : 'rgba(255,255,255,0.5)',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '15px',
+              transition: 'all 0.3s ease',
+              borderBottom: selectedTab === 'module' ? '3px solid #667eea' : '3px solid transparent',
+            }}
+          >
+            模块设置
+          </button>
+          <button
+            onClick={() => setSelectedTab('background')}
+            style={{
+              flex: 1,
+              padding: '18px 0',
+              background: selectedTab === 'background' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
+              color: selectedTab === 'background' ? '#fff' : 'rgba(255,255,255,0.5)',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '15px',
+              transition: 'all 0.3s ease',
+              borderBottom: selectedTab === 'background' ? '3px solid #667eea' : '3px solid transparent',
+            }}
+          >
+            背景设置
+          </button>
+        </div>
+
+        {/* 选项卡内容 */}
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          {selectedTab === 'background' && (
+            <BackgroundTab
+              backgroundLayers={backgroundLayers}
+              backgroundBlur={backgroundBlur}
+              onAddBackground={addBackgroundLayer}
+              onRemoveLayer={removeBackgroundLayer}
+              onUpdateLayer={updateBackgroundLayer}
+              onMoveLayer={moveBackgroundLayer}
+              onClearLayers={clearBackgroundLayers}
+              onBlurChange={(value) => commitCanvasState(modules, backgroundLayers, value)}
+            />
+          )}
+          {selectedTab === 'module' && (
+            <ModuleTab
+              selectedModule={selectedModule}
+              selectedModules={selectedModules}
+              onModuleUpdate={handleModuleUpdate}
+              onBatchModuleUpdate={handleBatchModuleUpdate}
+              onDeselect={() => {
+                setSelectedModuleId(null);
+                setSelectedModuleIds([]);
+              }}
+              onDeleteModule={handleDeleteModule}
+            />
+          )}
+        </div>
+        {/* 控制中心底部操作按钮 */}
+        <div style={{ padding: 16, borderTop: '1px solid rgba(255,255,255,0.04)', marginTop: 'auto', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+          <button onClick={() => exportViaCanvas('phone-canvas')} style={{ padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(90deg,#10b981,#06b6d4)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 }}>保存预览</button>
+          <button onClick={openLatestPreview} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', color: '#fff', border: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', fontWeight: 600 }}>打开最近保存</button>
+          <button onClick={checkLatestPreviewColor} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', color: '#fff', border: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', fontWeight: 600 }}>检测最近保存颜色</button>
+          <button onClick={() => setHistoryOpen((s) => !s)} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', fontWeight: 600 }}>{historyOpen ? '关闭历史' : '查看历史'}</button>
+          {debugSample && <div style={{ marginLeft: 8, color: '#fff', fontSize: 12 }}>{debugSample}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 导出：将组件内的导出函数移到文件顶层，供外部调用
+export const exportViaCanvas = async (elementId: string) => {
+  const node = document.getElementById(elementId) as HTMLElement | null;
+  if (!node) return;
+
+  const scale = 4; // 暴力提升 4 倍清晰度
+
+  // 动态引入 html2canvas
+  const html2canvas = (await import('html2canvas')).default;
+
+  try {
+    const canvas = await html2canvas(node, {
+      scale: scale,
+      useCORS: true,
+      backgroundColor: null, // 保持透明度
+      logging: false,
+      onclone: (clonedDoc: Document) => {
+        try {
+          const clonedNode = clonedDoc.getElementById(elementId) as HTMLElement | null;
+          if (clonedNode) {
+            // 移除所有 Grid 布局干扰，强制设为 block
+            clonedNode.style.display = 'block';
+
+            // 给所有 img 强制背景透明并去掉滤镜
+            const images = Array.from(clonedNode.querySelectorAll('img')) as HTMLImageElement[];
+            images.forEach((img) => {
+              try {
+                img.style.background = 'transparent';
+                img.style.setProperty('filter', 'none', 'important');
+              } catch (e) {}
+            });
+
+            // 确保 control 模块的圆角正确继承且不被溢出切割
+            const modules = Array.from(clonedNode.querySelectorAll('.control-module')) as HTMLElement[];
+            modules.forEach((m) => {
+              try {
+                const el = m as HTMLElement;
+                el.style.overflow = 'hidden';
+                const comp = clonedDoc.defaultView ? clonedDoc.defaultView.getComputedStyle(m) : null;
+                if (comp) el.style.borderRadius = comp.borderRadius || '';
+              } catch (e) {}
+            });
+          }
+        } catch (err) {}
+      }
+    });
+
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    const link = document.createElement('a');
+    link.download = `Perfect-CC-${Date.now()}.png`;
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (err) {
+    console.error('导出彻底失败:', err);
+  }
+};
