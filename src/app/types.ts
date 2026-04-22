@@ -1,32 +1,28 @@
-import { LucideIcon } from 'lucide-react';
-
-export interface ModulePosition {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  borderRadius: number;
-}
+import type { LucideIcon } from 'lucide-react';
 
 export interface ModuleData {
   id: string;
   icon: LucideIcon | null;
   iconName: string;
-  label?: string;
-  position: ModulePosition;
+  position: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    borderRadius: number;
+  };
   gridX: number;
   gridY: number;
   widthUnits: number;
   heightUnits: number;
   backgroundColor?: string;
-  borderColor?: string;
+  gradient?: string;
   iconColor?: string;
   iconBackgroundColor?: string;
-  gradient?: string;
-  image?: string;
-  customImage?: string;
+  borderColor?: string;
+  label?: string;
   customIcon?: string;
-  textColor?: string;
+  customImage?: string;
   percentage?: number;
   percentageColor?: string;
 }

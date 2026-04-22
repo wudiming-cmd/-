@@ -5,6 +5,8 @@ import { analyzeImageWithAI } from './utils/aiAnalyze';
 import type { ModuleData } from './types';
 import { BackgroundTab } from './components/BackgroundTab';
 import { ModuleTab } from './components/ModuleTab';
+import { ExportDialog } from './components/ExportDialog';
+import { AIAssistant } from './components/AIAssistant';
 import {
   Plane,
   Music,
@@ -23,7 +25,9 @@ import {
   Bluetooth,
   Radio,
   Sparkles,
+  Download,
 } from 'lucide-react';
+import GoogleTrendsModule from './components/GoogleTrendsModule';
 
 type ModuleTemplate = Omit<ModuleData, 'id'> & { category: string };
 
@@ -45,9 +49,12 @@ export default function App() {
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
   const [draggingModuleId, setDraggingModuleId] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  // 记录最后一次指针位置（用于粘贴时判断目标模块）
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [backgroundLayers, setBackgroundLayers] = useState<BackgroundLayer[]>([]);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(0);
-  const [selectedTab, setSelectedTab] = useState<'background' | 'module'>('module');
+  const [selectedTab, setSelectedTab] = useState<'background' | 'module' | 'ai'>('module');
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [history, setHistory] = useState<Array<{modules: ModuleData[]; backgroundLayers: BackgroundLayer[]; backgroundBlur: number}>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
@@ -188,13 +195,22 @@ export default function App() {
   };
 
   const handlePointerMove = (event: PointerEvent | ReactPointerEvent<HTMLDivElement>) => {
+    // always update last pointer position for paste targeting
+    try {
+      const px = (event as any).clientX as number | undefined;
+      const py = (event as any).clientY as number | undefined;
+      if (typeof px === 'number' && typeof py === 'number') {
+        lastPointerRef.current = { x: px, y: py };
+      }
+    } catch (e) {}
+
     if (!draggingModuleId || !previewRef.current) {
       return;
     }
 
     const rect = previewRef.current.getBoundingClientRect();
-    const clientX = event.clientX;
-    const clientY = event.clientY;
+    const clientX = (event as any).clientX as number;
+    const clientY = (event as any).clientY as number;
     const pointerX = (clientX - rect.left) / zoom;
     const pointerY = (clientY - rect.top) / zoom;
     const rawGridX = Math.round((pointerX - gridOriginLeft) / (gridCellWidth + gridGap)) + 1;
@@ -286,6 +302,8 @@ export default function App() {
       window.removeEventListener('pointermove', handlePointerMove);
     };
   }, [draggingModuleId, handlePointerMove]);
+
+  
 
   // --- Helpers for drag & drop from outside (files) and from sidebar (templates) ---
   const getModuleIdAtPointer = (clientX: number, clientY: number) => {
@@ -655,6 +673,8 @@ export default function App() {
     },
   ]);
 
+ 
+
   useEffect(() => {
     if (historyIndex === -1) {
       pushHistory({ modules, backgroundLayers, backgroundBlur });
@@ -695,6 +715,16 @@ export default function App() {
         return module;
       }
       return { ...module, ...updates };
+    });
+    commitCanvasState(nextModules);
+  };
+
+  const handleApplyTheme = (perModuleUpdates: Array<{ id: string } & Partial<ModuleData>>) => {
+    const nextModules = modules.map((m) => {
+      const upd = perModuleUpdates.find((u) => u.id === m.id);
+      if (!upd) return m;
+      const { id: _id, ...rest } = upd;
+      return { ...m, ...rest };
     });
     commitCanvasState(nextModules);
   };
@@ -798,6 +828,8 @@ export default function App() {
   const selectedModule = modules.find((m) => m.id === selectedModuleId);
   const selectedModules = modules.filter((m) => selectedModuleIds.includes(m.id));
   const [uploadedImages, setUploadedImages] = useState<Array<{id: string; dataURL: string; name?: string}>>([]);
+  // 控制是否显示网格辅助线（默认隐藏）
+  const [showGrid, setShowGrid] = useState<boolean>(false);
   // UI states for drag & drop
   const [isCanvasDragActive, setIsCanvasDragActive] = useState<boolean>(false);
   const [hoveredModuleIdDuringDrag, setHoveredModuleIdDuringDrag] = useState<string | null>(null);
@@ -815,6 +847,70 @@ export default function App() {
     } catch {}
   }, []);
 
+  // 支持粘贴图片到模块：如果有选中模块则填充该模块，否则会尝试根据最后指针位置定位模块，找不到则加入上传图片区
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      try {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        for (const it of Array.from(items)) {
+          if (!it) continue;
+          if (it.type && it.type.indexOf('image') !== -1) {
+            const blob = it.getAsFile ? it.getAsFile() : null;
+            if (!blob) continue;
+            const dataURL = await blobToDataURL(blob);
+            setIsAnalyzing(true);
+            try {
+              let aiResult = null;
+              try {
+                aiResult = await analyzeImageWithAI(dataURL);
+              } catch (err) {
+                console.warn('AI analyze failed', err);
+              }
+
+              // 选择目标模块：优先选中模块，其次尝试使用最后一次指针位置
+              let targetId = selectedModuleId;
+              if (!targetId && lastPointerRef.current && previewRef.current) {
+                const id = getModuleIdAtPointer(lastPointerRef.current.x, lastPointerRef.current.y);
+                if (id) targetId = id;
+              }
+
+              if (targetId) {
+                const nextModules = modules.map((m) => {
+                  if (m.id !== targetId) return m;
+                  return {
+                    ...m,
+                    customIcon: dataURL,
+                    backgroundColor: aiResult?.backgroundColor || m.backgroundColor,
+                    iconColor: aiResult?.iconColor || m.iconColor,
+                    label: aiResult?.label || m.label,
+                  };
+                });
+                commitCanvasState(nextModules);
+                setFlashingModuleId(targetId);
+                setTimeout(() => setFlashingModuleId(null), 1200);
+              } else {
+                // 未定位到模块：加入上传区以供拖拽使用
+                const id = `upload-${Date.now()}`;
+                setUploadedImages((prev) => [{ id, dataURL, name: 'pasted-image' }, ...prev]);
+              }
+            } finally {
+              setIsAnalyzing(false);
+            }
+
+            e.preventDefault();
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('paste handler error', err);
+      }
+    };
+
+    window.addEventListener('paste', onPaste as any);
+    return () => window.removeEventListener('paste', onPaste as any);
+  }, [modules, selectedModuleId, previewRef, uploadedImages]);
+
   const saveHistoryToStorage = (next: typeof previewHistory) => {
     try {
       localStorage.setItem('previewHistory', JSON.stringify(next));
@@ -823,198 +919,214 @@ export default function App() {
 
   const capturePreview = async () => {
     if (!previewRef.current) return null;
+    const node = previewRef.current as HTMLElement;
     try {
-      const html2canvas = (await import('html2canvas')).default;
-      const el = previewRef.current as HTMLElement;
-      // hide texture overlays (they have pointer-events-none) and store originals
-      const overlays = Array.from(el.querySelectorAll('.pointer-events-none')) as HTMLElement[];
-      const overlayDisplays = overlays.map((o) => o.style.display || '');
-      const origBorderRadius = el.style.borderRadius;
-      const origBoxShadow = el.style.boxShadow;
-      // prepare backup arrays so finally can restore even if try block throws
-      let svgBackups: Array<{ el: Element; attrs: Record<string, string>; styleColor?: string }> = [];
-      let bgBackups: Array<{ el: HTMLElement; background?: string; backgroundImage?: string; backgroundColor?: string; backgroundRepeat?: string; backgroundSize?: string }> = [];
-      // collect temp css rules for locking per-element radii
-      const perElemRules: string[] = [];
-      const tempStyle = document.createElement('style');
-      tempStyle.setAttribute('data-capture-fix', '1');
+      const scale = 3;
+      const targetWidth = Math.round(node.offsetWidth * scale);
+      const targetHeight = Math.round(node.offsetHeight * scale);
+
+      // create offscreen wrapper sized to target pixels
+      const wrapper = document.createElement('div');
+      wrapper.style.position = 'fixed';
+      wrapper.style.left = '-99999px';
+      wrapper.style.top = '-99999px';
+      wrapper.style.width = `${targetWidth}px`;
+      wrapper.style.height = `${targetHeight}px`;
+      wrapper.style.overflow = 'hidden';
+      wrapper.style.display = 'block';
+      // force black fallback background to avoid checkerboard
+      wrapper.style.background = window.getComputedStyle(node).backgroundColor || '#000';
+      wrapper.style.borderRadius = '0px';
+
+      const clone = node.cloneNode(true) as HTMLElement;
+      try { clone.style.zoom = '1'; } catch (e) {}
+      try { clone.style.transform = 'none'; } catch (e) {}
+      clone.style.transform = `scale(${scale})`;
+      clone.style.transformOrigin = 'top left';
+      clone.style.width = `${node.offsetWidth}px`;
+      clone.style.height = `${node.offsetHeight}px`;
+      clone.style.borderRadius = '0px';
+      clone.style.overflow = 'hidden';
+      clone.style.display = 'block';
+      clone.style.position = 'absolute';
+      clone.style.left = '0';
+      clone.style.top = '0';
+      clone.style.margin = '0';
+
+      wrapper.appendChild(clone);
+      const wrapperId = `export-capture-${Date.now()}`;
+      wrapper.id = wrapperId;
+      document.body.appendChild(wrapper);
+
+      // inject capture-clean styles
       try {
-        // hide overlays
-        overlays.forEach((o) => (o.style.display = 'none'));
-        el.style.boxShadow = 'none';
-
-        // insert a backdrop to avoid black/transparent checkerboard when backgrounds fail to load
-        const compEl = window.getComputedStyle(el);
-        const backdrop = document.createElement('div');
-        backdrop.setAttribute('data-capture-backdrop', '1');
-        backdrop.style.position = 'absolute';
-        backdrop.style.inset = '0';
-        backdrop.style.zIndex = '-1';
-        backdrop.style.background = compEl.backgroundColor || '#000';
-        el.insertBefore(backdrop, el.firstChild);
-
-        // disable pseudo-elements, blend modes and backdrop filters globally for capture
-        tempStyle.innerHTML = `
-          .capture-fix *::before, .capture-fix *::after { display: none !important; background: none !important; }
-          .capture-fix * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; filter: none !important; }
+        const styleEl = document.createElement('style');
+        styleEl.setAttribute('data-export-clean', '1');
+        styleEl.innerHTML = `
+          /* hide pseudo-elements and normalize filters */
+          #${wrapperId} *::before, #${wrapperId} *::after { display: none !important; content: none !important; }
+          #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; filter: none !important; }
+          #${wrapperId} img { image-rendering: auto !important; }
+          /* hide background grid/lines for clean export */
+          #${wrapperId} [class*="grid"], #${wrapperId} [class*="line"], #${wrapperId} [class*="border"],
+          #${wrapperId} [data-grid], #${wrapperId} [data-line], #${wrapperId} .grid, #${wrapperId} .line, #${wrapperId} .border { display: none !important; }
+          /* hide any texture overlays that use pointer-events-none */
+          #${wrapperId} .pointer-events-none { display: none !important; }
         `;
-        document.head.appendChild(tempStyle);
-        el.classList.add('capture-fix');
+        wrapper.insertBefore(styleEl, wrapper.firstChild);
+      } catch (err) {}
 
-        // prepare elements list
-        const allElems = Array.from(el.querySelectorAll<HTMLElement>('*')).concat(el as HTMLElement);
-
-        // preload background-image URLs found in computed styles
-        const bgUrls = new Set<string>();
-        const urlRe = /url\((?:"|'|)(.*?)(?:"|'|)\)/i;
-        allElems.forEach((e, idx) => {
+      // surgical on-clone adjustments: copy computed pixel border-radius and sizes from originals
+      try {
+        const modulesInClone = Array.from(wrapper.querySelectorAll<HTMLElement>('[data-module-id]')) as HTMLElement[];
+        modulesInClone.forEach((clonedNode) => {
           try {
-            const comp = window.getComputedStyle(e);
-            // backup current inline background-related styles
-            bgBackups.push({ el: e, background: e.style.background || '', backgroundImage: e.style.backgroundImage || '', backgroundColor: e.style.backgroundColor || '', backgroundRepeat: e.style.backgroundRepeat || '', backgroundSize: e.style.backgroundSize || '' });
-            const bgImage = comp.backgroundImage || '';
-            const m = bgImage && bgImage !== 'none' ? bgImage.match(urlRe) : null;
-            if (m && m[1]) {
-              const url = m[1];
-              if (url && !url.startsWith('data:')) bgUrls.add(url);
-            }
-          } catch (err) {}
-        });
-
-        // helper to load an image via Image() and return success flag
-        const loadImg = (url: string, timeout = 4000) => new Promise<boolean>((resolve) => {
-          try {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            let done = false;
-            const onSuccess = () => { if (done) return; done = true; resolve(true); };
-            const onFail = () => { if (done) return; done = true; resolve(false); };
-            const tid = setTimeout(() => { onFail(); }, timeout);
-            img.onload = () => { clearTimeout(tid); onSuccess(); };
-            img.onerror = () => { clearTimeout(tid); onFail(); };
-            img.src = url;
-          } catch (err) { resolve(false); }
-        });
-
-        // attempt to preload all background urls in parallel (best-effort)
-        const loadPromises: Array<Promise<boolean>> = [];
-        bgUrls.forEach((u) => loadPromises.push(loadImg(u)));
-        const results = await Promise.allSettled(loadPromises);
-
-        // lock per-element border-radius and disable mask/clip-path by injecting per-element rules
-        allElems.forEach((e, i) => {
-          try {
-            const comp = window.getComputedStyle(e);
+            const id = clonedNode.getAttribute('data-module-id');
+            if (!id) return;
+            const orig = document.querySelector<HTMLElement>(`[data-module-id="${id}"]`);
+            if (!orig) return;
+            const comp = window.getComputedStyle(orig as Element);
             const rad = comp.borderRadius || '0px';
-            const id = `cap-${Date.now()}-${i}`;
-            e.setAttribute('data-capture-id', id);
-            perElemRules.push(`[data-capture-id="${id}"]{ border-radius: ${rad} !important; -webkit-mask-image: none !important; mask-image: none !important; clip-path: none !important; overflow: hidden !important; }
-`);
+            // write pixel-absolute radius to cloned node
+            try { clonedNode.style.borderRadius = rad; } catch (e) {}
+            // lock width/height in px to avoid percent/scale differences
+            try { clonedNode.style.width = `${orig.offsetWidth}px`; } catch (e) {}
+            try { clonedNode.style.height = `${orig.offsetHeight}px`; } catch (e) {}
+
+            // remove backdrop-filter and webkit variant
+            try { clonedNode.style.backdropFilter = 'none'; } catch (e) {}
+            try { (clonedNode.style as any).webkitBackdropFilter = 'none'; } catch (e) {}
+
+            // ensure background-size covers to match original rendering
+            try { clonedNode.style.backgroundSize = 'cover'; } catch (e) {}
           } catch (err) {}
         });
 
-        // append per-element css rules
-        if (perElemRules.length > 0) {
-          tempStyle.innerHTML += '\n' + perElemRules.join('\n');
-        }
-
-        // ensure SVG/icon stroke colors are explicit inline so html2canvas captures strokes correctly
-        const svgElements = Array.from(el.querySelectorAll<SVGSVGElement>('svg'));
+        // set crossOrigin for images in clone and mark remote backgrounds
+        const imgs = Array.from(wrapper.querySelectorAll<HTMLImageElement>('img'));
+        imgs.forEach((img) => {
+          try {
+            img.crossOrigin = 'anonymous';
+            const src = img.getAttribute('src') || '';
+            if (src && !src.startsWith('data:')) {
+              // reassign to trigger CORS-aware load if allowed by server
+              img.src = src;
+            }
+          } catch (e) {}
+        });
+        // aggressively detect and hide grid artifacts while preserving modules
         try {
-          svgElements.forEach((svg) => {
-            try {
-              svgBackups.push({ el: svg, attrs: { fill: (svg.getAttribute('fill') || ''), stroke: (svg.getAttribute('stroke') || '') }, styleColor: (svg as unknown as HTMLElement).style.color || '' });
-              const children = Array.from(svg.querySelectorAll<SVGElement>('*'));
-              children.forEach((child) => {
-                try {
-                  const strokeAttr = child.getAttribute('stroke');
-                  const comp = window.getComputedStyle(child as Element);
-                  const compColor = comp.color || '';
-                  if ((!strokeAttr || strokeAttr === 'none') && compColor) {
-                    try { child.setAttribute('stroke', compColor); } catch (e) {}
-                  }
-                } catch (err) {}
-              });
-            } catch (err) {}
-          });
-        } catch (err) {}
+          const allEl = Array.from(wrapper.querySelectorAll<HTMLElement>('*')) as HTMLElement[];
+          const isModuleOrAncestor = (el: HTMLElement) => {
+            if (el.hasAttribute('data-module-id')) return true;
+            let p: HTMLElement | null = el.parentElement;
+            while (p) {
+              if (p.hasAttribute('data-module-id')) return true;
+              p = p.parentElement;
+            }
+            return false;
+          };
 
-        // choose capture scale for high-quality output (clamped)
-        const deviceScale = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        const canvas = await html2canvas(el as HTMLElement, { useCORS: true, allowTaint: false, logging: false, scale: deviceScale, backgroundColor: compEl.backgroundColor || '#000' });
-        // Ensure exported image is 9:16 and width in [720,1280]
-        const origWidth = canvas.width;
-        const clampedWidth = Math.max(720, Math.min(1280, origWidth));
-        const targetWidth = clampedWidth;
-        const targetHeight = Math.round((targetWidth * 16) / 9);
-        let finalDataURL = canvas.toDataURL('image/png');
-        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-          const tmp = document.createElement('canvas');
-          tmp.width = targetWidth;
-          tmp.height = targetHeight;
-          const ctx = tmp.getContext('2d');
-          if (ctx) {
-            // draw with smoothing
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, targetWidth, targetHeight);
-            finalDataURL = tmp.toDataURL('image/png');
+          // also ensure pseudo-elements inside wrapper are cleared via inline stylesheet
+          try {
+            const pseudoClear = document.createElement('style');
+            pseudoClear.setAttribute('data-export-pseudo-clear', '1');
+            pseudoClear.innerHTML = `#${wrapperId} *::before, #${wrapperId} *::after { background-image: none !important; background: none !important; content: none !important; }`;
+            wrapper.insertBefore(pseudoClear, wrapper.firstChild);
+          } catch (e) {}
+
+          allEl.forEach((el) => {
+            try {
+              // never touch actual modules or their ancestors
+              if (isModuleOrAncestor(el)) return;
+
+              const cs = window.getComputedStyle(el);
+              const w = el.offsetWidth || parseFloat(cs.width || '0') || 0;
+              const h = el.offsetHeight || parseFloat(cs.height || '0') || 0;
+              const bg = cs.backgroundImage || '';
+
+              // clear gradient/SVG/data-uri backgrounds used as grid textures
+              if (bg && /repeating-linear-gradient|repeating-radial-gradient|linear-gradient|data:image\/svg\+xml|svg/i.test(bg)) {
+                try { el.style.backgroundImage = 'none'; } catch (e) {}
+              }
+
+              // thin lines -> hide
+              if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) {
+                if (el.parentNode) el.parentNode.removeChild(el);
+                return;
+              }
+
+              // hide canvas overlays
+              if (el.tagName.toLowerCase() === 'canvas') {
+                try { el.style.display = 'none'; } catch (e) {}
+                return;
+              }
+
+              // clear small repeating textures by background-size heuristic
+              const bgSize = cs.backgroundSize || '';
+              if (bg && bgSize && /px/.test(bgSize)) {
+                const parts = bgSize.split(' ');
+                const sx = parseFloat(parts[0]) || 0;
+                const sy = parseFloat(parts[1]) || sx || 0;
+                if ((sx > 0 && sx <= 8) || (sy > 0 && sy <= 8)) {
+                  try { el.style.backgroundImage = 'none'; } catch (e) {}
+                  try { el.style.background = window.getComputedStyle(node).backgroundColor || 'transparent'; } catch (e) {}
+                  return;
+                }
+              }
+            } catch (e) {}
+          });
+        } catch (e) {}
+
+        // ensure top-level phone-canvas (if present) is square/rect without rounding
+        try {
+          const clonedRoot = wrapper.querySelector<HTMLElement>('[data-phone-canvas]') || wrapper.firstElementChild as HTMLElement | null;
+          if (clonedRoot) {
+            try { clonedRoot.style.borderRadius = '0px'; } catch (e) {}
+            try { clonedRoot.style.overflow = 'hidden'; } catch (e) {}
+            try { clonedRoot.style.background = window.getComputedStyle(node).backgroundColor || '#000'; } catch (e) {}
           }
-        }
+        } catch (e) {}
+      } catch (err) {}
+
+      const param = {
+        width: targetWidth,
+        height: targetHeight,
+        style: {
+          width: `${targetWidth}px`,
+          height: `${targetHeight}px`,
+          transform: 'none',
+          transformOrigin: 'top left',
+          borderRadius: '0px',
+          display: 'block',
+          overflow: 'hidden'
+        },
+        quality: 1,
+        copyDefaultStyles: true,
+        cacheBust: true,
+        useCORS: true,
+      } as any;
+
+      try {
+        const dataUrl = await domtoimage.toPng(wrapper, param);
         const id = `preview-${Date.now()}`;
-        const next = [{ id, dataURL: finalDataURL, createdAt: Date.now() }, ...previewHistory].slice(0, 50);
+        const next = [{ id, dataURL: dataUrl, createdAt: Date.now() }, ...previewHistory].slice(0, 50);
         setPreviewHistory(next);
         saveHistoryToStorage(next);
-        return finalDataURL;
+        return dataUrl;
+      } catch (err) {
+        console.error('capture failed (domtoimage):', err);
+        return null;
       } finally {
-        // restore
-        overlays.forEach((o, i) => (o.style.display = overlayDisplays[i]));
-        // remove temporary class and stylesheet
-        try {
-          el.classList.remove('capture-fix');
-          const ts = document.head.querySelector('style[data-capture-fix]');
-          if (ts && ts.parentNode) ts.parentNode.removeChild(ts);
-        } catch (err) {}
-
-        // restore SVG attributes
-        try {
-          const svgs = Array.from(el.querySelectorAll<SVGElement>('svg'));
-          for (const s of svgs) {
-            const found = svgBackups.find((b) => b.el === s);
-            if (found) {
-              try { if (found.attrs && 'stroke' in found.attrs) {
-                const val = found.attrs.stroke || '';
-                if (val) s.setAttribute('stroke', val); else s.removeAttribute('stroke');
-              } } catch (err) {}
-              try { if (found.attrs && 'fill' in found.attrs) {
-                const val = found.attrs.fill || '';
-                if (val) s.setAttribute('fill', val); else s.removeAttribute('fill');
-              } } catch (err) {}
-              try { if (found.styleColor !== undefined) (s as unknown as HTMLElement).style.color = found.styleColor || ''; } catch (err) {}
-            }
-          }
-        } catch (err) {}
-
-        // restore gradient/pattern backgrounds
-        try {
-          for (const b of bgBackups) {
-            try {
-              b.el.style.background = b.background || '';
-              b.el.style.backgroundImage = b.backgroundImage || '';
-              b.el.style.backgroundColor = b.backgroundColor || '';
-              b.el.style.backgroundRepeat = b.backgroundRepeat || '';
-              b.el.style.backgroundSize = b.backgroundSize || '';
-            } catch (err) {}
-          }
-        } catch (err) {}
-        el.style.borderRadius = origBorderRadius;
-        el.style.boxShadow = origBoxShadow;
+        try { if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper); } catch (e) {}
       }
     } catch (err) {
-      console.error('capture failed', err);
+      console.error('capturePreview error', err);
       return null;
     }
   };
+
+
 
   const handleSavePreview = async () => {
     const dataURL = await capturePreview();
@@ -1042,6 +1154,7 @@ export default function App() {
           if (clonedRoot) {
             clonedRoot.style.overflow = 'hidden';
             clonedRoot.style.display = 'block';
+            try { clonedRoot.style.clipPath = 'none'; } catch (e) {}
           }
 
           const modulesInClone = Array.from(clonedDoc.querySelectorAll('[data-module-id]')) as HTMLElement[];
@@ -1061,6 +1174,50 @@ export default function App() {
               }
             } catch (err) {}
           });
+          // additional cleaning: hide gradient/SVG/canvas grid artifacts outside modules
+          try {
+            // clear pseudo-element backgrounds inside clonedDoc
+            try {
+              const ps = clonedDoc.createElement('style');
+              ps.setAttribute('data-export-pseudo-clear', '1');
+              ps.innerHTML = `*::before, *::after { background-image: none !important; background: none !important; content: none !important; }`;
+              clonedDoc.head && clonedDoc.head.appendChild(ps);
+            } catch (e) {}
+
+            const allEl = Array.from(clonedDoc.querySelectorAll<HTMLElement>('*')) as HTMLElement[];
+            const isModuleOrAncestor = (el: HTMLElement) => {
+              if (el.hasAttribute('data-module-id')) return true;
+              let p: HTMLElement | null = el.parentElement;
+              while (p) {
+                if (p.hasAttribute('data-module-id')) return true;
+                p = p.parentElement;
+              }
+              return false;
+            };
+            allEl.forEach((el) => {
+              try {
+                if (isModuleOrAncestor(el)) return;
+                const cs = clonedDoc.defaultView ? clonedDoc.defaultView.getComputedStyle(el) : (el.style as CSSStyleDeclaration);
+                const bg = cs ? (cs.backgroundImage || '') : '';
+                const w = el.offsetWidth || 0;
+                const h = el.offsetHeight || 0;
+                // if background image looks like grid/pattern, clear it inline
+                if (bg && /repeating-linear-gradient|repeating-radial-gradient|linear-gradient|data:image\/svg\+xml|svg/i.test(bg)) {
+                  try { el.style.backgroundImage = 'none'; } catch (e) {}
+                  try { el.style.background = clonedDoc.defaultView ? clonedDoc.defaultView.getComputedStyle(clonedDoc.body).backgroundColor || 'transparent' : 'transparent'; } catch (e) {}
+                  return;
+                }
+                if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) {
+                  try { el.style.display = 'none'; } catch (e) {}
+                  return;
+                }
+                if (el.tagName.toLowerCase() === 'canvas') {
+                  try { el.style.display = 'none'; } catch (e) {}
+                  return;
+                }
+              } catch (e) {}
+            });
+          } catch (e) {}
         } catch (err) {
           // ignore clone errors
         }
@@ -1154,48 +1311,52 @@ export default function App() {
         #${wrapperId} svg, #${wrapperId} svg * { stroke: none !important; filter: none !important; }
         #${wrapperId} [class*="grid"], #${wrapperId} [class*="line"], #${wrapperId} [class*="border"], #${wrapperId} [data-grid], #${wrapperId} [data-line] { display: none !important; }
         #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+        #${wrapperId} *::before, #${wrapperId} *::after { background-image: none !important; background: none !important; }
       `;
       wrapper.insertBefore(styleEl, wrapper.firstChild);
     } catch (err) {
       // 忽略样式注入失败
     }
 
-    // 进一步用 JS 清理：移除非常细的线条元素和图标周围的小近黑方块
+    // 进一步用 JS 清理：移除非常细的线条元素、渐变/图片网格、SVG pattern 和 canvas 覆盖层
     try {
       const elems = Array.from(wrapper.querySelectorAll<HTMLElement>('*'));
+      const isModuleOrAncestor = (el: HTMLElement) => {
+        if (el.hasAttribute('data-module-id')) return true;
+        let p: HTMLElement | null = el.parentElement;
+        while (p) {
+          if (p.hasAttribute('data-module-id')) return true;
+          p = p.parentElement;
+        }
+        return false;
+      };
       elems.forEach((el) => {
         try {
+          if (isModuleOrAncestor(el)) return;
           const cs = window.getComputedStyle(el);
           const w = el.offsetWidth || parseFloat(cs.width || '0');
           const h = el.offsetHeight || parseFloat(cs.height || '0');
+          const bg = cs.backgroundImage || '';
 
-          // 细线（通常为网格线） -> 移除
-          if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) {
-            if (el.parentNode) el.parentNode.removeChild(el);
+          // remove repeating/linear gradients and SVG/data-uri backgrounds used as grid textures
+          if (bg && /repeating-linear-gradient|repeating-radial-gradient|linear-gradient|data:image\/svg\+xml|svg/i.test(bg)) {
+            el.style.display = 'none';
             return;
           }
 
-          // 近黑色小方块（图标周围的暗框） -> 透明化并去掉阴影边框
-          const bg = cs.backgroundColor || '';
-          const rgbMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/);
-          let isNearBlack = false;
-          if (rgbMatch) {
-            const r = parseInt(rgbMatch[1], 10);
-            const g = parseInt(rgbMatch[2], 10);
-            const b = parseInt(rgbMatch[3], 10);
-            const a = rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1;
-            const luminance = (0.299 * r + 0.587 * g + 0.114 * b) * a;
-            if (luminance < 40) isNearBlack = true;
-          }
-          const approxSquare = Math.abs(w - h) <= Math.max(6, Math.min(w, h) * 0.25);
-          if (isNearBlack && w >= 10 && h >= 10 && approxSquare) {
-            el.style.background = 'transparent';
-            el.style.backgroundColor = 'transparent';
-            el.style.boxShadow = 'none';
-            el.style.border = 'none';
+          // thin lines
+          if ((w > 0 && w <= 2) || (h > 0 && h <= 2)) {
+            el.style.display = 'none';
+            return;
           }
 
-          // 明确标记为网格或线的元素，直接隐藏
+          // hide canvas overlays
+          if (el.tagName.toLowerCase() === 'canvas') {
+            el.style.display = 'none';
+            return;
+          }
+
+          // clear explicit grid-like class names
           const cls = (el.className || '').toString().toLowerCase();
           if (cls.includes('grid') || cls.includes('line') || cls.includes('border')) {
             el.style.display = 'none';
@@ -1222,6 +1383,15 @@ export default function App() {
     } as any;
 
     try {
+      // ensure cloned root has no clipping or rounding
+      try {
+        const clonedRoot = wrapper.querySelector<HTMLElement>('[data-phone-canvas]') || wrapper.firstElementChild as HTMLElement | null;
+        if (clonedRoot) {
+          try { clonedRoot.style.borderRadius = '0px'; } catch (e) {}
+          try { clonedRoot.style.clipPath = 'none'; } catch (e) {}
+        }
+      } catch (e) {}
+
       const dataUrl = await domtoimage.toPng(wrapper, param);
       const link = document.createElement('a');
       link.download = `ControlCenter_HD_${Date.now()}.png`;
@@ -1290,6 +1460,13 @@ export default function App() {
               <div style={{ fontSize: '18px', fontWeight: 800, marginBottom: '4px' }}>模块库</div>
               <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>上传图片后可拖拽到模块图标上</div>
             </div>
+          </div>
+        </div>
+
+        {/* 独立信息区：Google Trends 快速查看 */}
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          <div style={{ width: '100%', height: 180, borderRadius: 12, overflow: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))' }}>
+            <GoogleTrendsModule />
           </div>
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
@@ -1472,48 +1649,78 @@ export default function App() {
                 />
               );
             })}
+            {/* 当 showGrid 为 false 时，增加遮罩以隐藏背景中的网格/纹理，但保持模块可见 */}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%)' }} />
+            {!showGrid && (
+              <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', opacity: 1, pointerEvents: 'none', zIndex: 0 }} />
+            )}
           </div>
 
           {/* 网格线 */}
-          <div
+          {/* 网格线：可通过 showGrid 控制显示 */}
+          {showGrid && (
+            <div
+              style={{
+                position: 'absolute',
+                left: gridOriginLeft,
+                top: gridOriginTop,
+                width: gridWidth,
+                height: gridHeight,
+                pointerEvents: 'none',
+              }}
+            >
+              {/* 保存预览 & 历史按钮 已移至控制中心底部（避免 pointerEvents:none 覆盖） */}
+              {Array.from({ length: gridColumns + 1 }).map((_, index) => (
+                <div
+                  key={`v-${index}`}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: index * (gridCellWidth + gridGap),
+                    width: 1,
+                    height: gridHeight,
+                    background: 'rgba(102, 126, 234, 0.1)',
+                  }}
+                />
+              ))}
+              {Array.from({ length: gridRows + 1 }).map((_, index) => (
+                <div
+                  key={`h-${index}`}
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: index * (gridCellHeight + gridGap),
+                    width: gridWidth,
+                    height: 1,
+                    background: 'rgba(102, 126, 234, 0.1)',
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* 网格显示切换按钮（画布右上角） */}
+          <button
+            onClick={() => setShowGrid((s) => !s)}
+            title="切换网格显示"
             style={{
               position: 'absolute',
-              left: gridOriginLeft,
-              top: gridOriginTop,
-              width: gridWidth,
-              height: gridHeight,
-              pointerEvents: 'none',
+              right: 20,
+              top: 20,
+              zIndex: 2000,
+              pointerEvents: 'auto',
+              background: 'rgba(0,0,0,0.6)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.06)',
+              padding: '6px 10px',
+              borderRadius: 8,
+              fontSize: 12,
+              cursor: 'pointer',
+              backdropFilter: 'blur(6px)'
             }}
           >
-            {/* 保存预览 & 历史按钮 已移至控制中心底部（避免 pointerEvents:none 覆盖） */}
-            {Array.from({ length: gridColumns + 1 }).map((_, index) => (
-              <div
-                key={`v-${index}`}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: index * (gridCellWidth + gridGap),
-                  width: 1,
-                  height: gridHeight,
-                  background: 'rgba(102, 126, 234, 0.1)',
-                }}
-              />
-            ))}
-            {Array.from({ length: gridRows + 1 }).map((_, index) => (
-              <div
-                key={`h-${index}`}
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: index * (gridCellHeight + gridGap),
-                  width: gridWidth,
-                  height: 1,
-                  background: 'rgba(102, 126, 234, 0.1)',
-                }}
-              />
-            ))}
-          </div>
+            {showGrid ? '隐藏网格' : '显示网格'}
+          </button>
 
           {/* 模块 */}
           {modules.map((m) => {
@@ -1658,6 +1865,7 @@ export default function App() {
                 )}
 
                 {/* 图标 */}
+                
                 {IconTag && m.id !== 'top-left' && (
                   <div
                     style={{
@@ -1817,6 +2025,28 @@ export default function App() {
           >
             背景设置
           </button>
+          <button
+            onClick={() => setSelectedTab('ai')}
+            style={{
+              flex: 1,
+              padding: '18px 0',
+              background: selectedTab === 'ai' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
+              color: selectedTab === 'ai' ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '15px',
+              transition: 'all 0.3s ease',
+              borderBottom: selectedTab === 'ai' ? '3px solid #a5b4fc' : '3px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <Sparkles size={14} />
+            AI 助手
+          </button>
         </div>
 
         {/* 选项卡内容 */}
@@ -1846,16 +2076,67 @@ export default function App() {
               onDeleteModule={handleDeleteModule}
             />
           )}
+          {selectedTab === 'ai' && (
+            <AIAssistant
+              modules={modules}
+              onApplyTheme={handleApplyTheme}
+              onBatchModuleUpdate={handleBatchModuleUpdate}
+            />
+          )}
         </div>
-        {/* 控制中心底部操作按钮 */}
-        <div style={{ padding: 16, borderTop: '1px solid rgba(255,255,255,0.04)', marginTop: 'auto', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
-          <button onClick={() => exportViaCanvas('phone-canvas')} style={{ padding: '10px 12px', borderRadius: 10, background: 'linear-gradient(90deg,#10b981,#06b6d4)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 }}>保存预览</button>
-          <button onClick={openLatestPreview} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', color: '#fff', border: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', fontWeight: 600 }}>打开最近保存</button>
-          <button onClick={checkLatestPreviewColor} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', color: '#fff', border: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', fontWeight: 600 }}>检测最近保存颜色</button>
-          <button onClick={() => setHistoryOpen((s) => !s)} style={{ padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', fontWeight: 600 }}>{historyOpen ? '关闭历史' : '查看历史'}</button>
-          {debugSample && <div style={{ marginLeft: 8, color: '#fff', fontSize: 12 }}>{debugSample}</div>}
+
+        {/* 底部操作按钮 */}
+        <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* 主导出按钮 */}
+          <button
+            onClick={() => setShowExportDialog(true)}
+            style={{
+              flex: 1,
+              padding: '11px 14px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              boxShadow: '0 4px 14px rgba(102,126,234,0.4)',
+            }}
+          >
+            <Download size={15} />
+            高清导出
+          </button>
+
+          {/* 快速保存 */}
+          <button
+            onClick={() => exportViaCanvas('phone-canvas')}
+            style={{ padding: '11px 14px', borderRadius: 12, background: 'linear-gradient(90deg,#10b981,#06b6d4)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+          >
+            快速保存
+          </button>
+
+          {/* 历史 */}
+          <button
+            onClick={() => setHistoryOpen((s) => !s)}
+            style={{ padding: '11px 13px', borderRadius: 12, background: 'rgba(255,255,255,0.04)', color: '#fff', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+          >
+            {historyOpen ? '关闭历史' : '历史'}
+          </button>
+          {debugSample && <div style={{ color: '#fff', fontSize: 11 }}>{debugSample}</div>}
         </div>
       </div>
+
+      {/* 导出对话框 */}
+      {showExportDialog && (
+        <ExportDialog
+          elementId="phone-canvas"
+          onClose={() => setShowExportDialog(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1882,6 +2163,9 @@ export const exportViaCanvas = async (elementId: string) => {
           if (clonedNode) {
             // 移除所有 Grid 布局干扰，强制设为 block
             clonedNode.style.display = 'block';
+            // 强制去掉圆角和外框，确保导出没有圆角或边框
+            try { clonedNode.style.borderRadius = '0px'; } catch (e) {}
+            try { clonedNode.style.border = 'none'; } catch (e) {}
 
             // 给所有 img 强制背景透明并去掉滤镜
             const images = Array.from(clonedNode.querySelectorAll('img')) as HTMLImageElement[];

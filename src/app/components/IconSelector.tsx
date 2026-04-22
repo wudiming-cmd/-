@@ -109,9 +109,9 @@ const localIconList: IconItem[] = Object.entries(localIconFiles)
   .map(([path, url]) => {
     const fileName = path.split('/').pop() || path;
     const name = fileName.replace(/\.(svg|png)$/i, '');
-    return { name, type: 'local', url: normalizeIconUrl(url), source: 'assets' };
+    return { name, type: 'local' as const, url: normalizeIconUrl(url), source: 'assets' as const };
   })
-  .filter((item) => item.url);
+  .filter((item) => item.url) as IconItem[];
 
 export function IconSelector({ currentIcon, onSelect }: IconSelectorProps) {
   const [isExpanded, setIsExpanded] = useState(false);

@@ -1,7 +1,7 @@
 // WARNING: API密钥暴露在前端代码中存在安全风险
 // 生产环境建议使用后端代理服务来保护API密钥
-const GEMINI_API_KEY = 'AIzaSyDWodY6sjmj9LYeAR-MdLR0SqK0l_8jDLA';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent';
+const GEMINI_API_KEY = 'AIzaSyBVCPFfBzlkpiOB9Z4t6DWmX2zbP_-OSTk';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 export interface AIAnalysisResult {
   backgroundColor: string;
