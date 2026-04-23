@@ -33,4 +33,16 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  server: {
+    proxy: {
+      // Proxy Volcengine CV API to avoid browser CORS restrictions
+      '/api/volcengine': {
+        target: 'https://visual.volcengineapi.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/volcengine/, ''),
+        secure: true,
+      },
+    },
+  },
 })

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, type PointerEvent as ReactPointerEvent } from 'react';
 import domtoimage from 'dom-to-image-more';
 import { removeBackground } from './utils/removeBg';
 import { analyzeImageWithAI } from './utils/aiAnalyze';
@@ -7,6 +7,8 @@ import { BackgroundTab } from './components/BackgroundTab';
 import { ModuleTab } from './components/ModuleTab';
 import { ExportDialog } from './components/ExportDialog';
 import { AIAssistant } from './components/AIAssistant';
+import AIImageGenerator from './components/AIImageGenerator';
+import BatchIconGenerator from './components/BatchIconGenerator';
 import {
   Plane,
   Music,
@@ -27,7 +29,8 @@ import {
   Sparkles,
   Download,
 } from 'lucide-react';
-import GoogleTrendsModule from './components/GoogleTrendsModule';
+import TrendingPanel from './components/TrendingPanel';
+import ImageSearchPanel from './components/ImageSearchPanel';
 
 type ModuleTemplate = Omit<ModuleData, 'id'> & { category: string };
 
@@ -54,6 +57,8 @@ export default function App() {
   const [backgroundLayers, setBackgroundLayers] = useState<BackgroundLayer[]>([]);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(0);
   const [selectedTab, setSelectedTab] = useState<'background' | 'module' | 'ai'>('module');
+  const [leftTab, setLeftTab] = useState<'trending' | 'images' | 'templates'>('trending');
+  const [aiSubTab, setAiSubTab] = useState<'generate' | 'theme' | 'batch'>('generate');
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [history, setHistory] = useState<Array<{modules: ModuleData[]; backgroundLayers: BackgroundLayer[]; backgroundBlur: number}>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -718,6 +723,11 @@ export default function App() {
     });
     commitCanvasState(nextModules);
   };
+
+  // Functional update — safe for concurrent / sequential calls (no stale closure)
+  const setModuleIcon = useCallback((moduleId: string, customIcon: string) => {
+    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, customIcon } : m));
+  }, []);
 
   const handleApplyTheme = (perModuleUpdates: Array<{ id: string } & Partial<ModuleData>>) => {
     const nextModules = modules.map((m) => {
@@ -1448,95 +1458,114 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', width: '100vw', height: '100vh', background: 'linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%)', color: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
-      <style>{`@keyframes spin { from {transform: rotate(0deg);} to {transform: rotate(360deg);} }`}</style>
       {/* 左侧：模块库 */}
-      <div style={{ width: '300px', background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', boxShadow: '2px 0 20px rgba(0,0,0,0.3)' }}>
-        <div style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start', background: 'linear-gradient(135deg, #2a5298 0%, #1e3a5f 100%)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,0.04)' }}>
-              <Sparkles color="#fff" />
-            </div>
-            <div>
-              <div style={{ fontSize: '18px', fontWeight: 800, marginBottom: '4px' }}>模块库</div>
-              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>上传图片后可拖拽到模块图标上</div>
-            </div>
+      <div style={{ width: '240px', background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', boxShadow: '2px 0 20px rgba(0,0,0,0.3)' }}>
+        {/* Header */}
+        <div style={{ padding: '10px 12px 8px', background: 'linear-gradient(135deg, #2a5298 0%, #1e3a5f 100%)', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={16} color="#fff" />
+            <span style={{ fontSize: 15, fontWeight: 800 }}>素材库</span>
           </div>
         </div>
 
-        {/* 独立信息区：Google Trends 快速查看 */}
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-          <div style={{ width: '100%', height: 180, borderRadius: 12, overflow: 'hidden', background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))' }}>
-            <GoogleTrendsModule />
-          </div>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
+          {([['trending', '热点'], ['images', '图片'], ['templates', '模板']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setLeftTab(key)}
+              style={{
+                flex: 1,
+                padding: '9px 0',
+                border: 'none',
+                background: leftTab === key ? 'rgba(102,126,234,0.12)' : 'transparent',
+                color: leftTab === key ? '#a5b4fc' : 'rgba(255,255,255,0.45)',
+                fontSize: 12,
+                fontWeight: leftTab === key ? 700 : 500,
+                cursor: 'pointer',
+                borderBottom: leftTab === key ? '2px solid #667eea' : '2px solid transparent',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
-          <div style={{ display: 'grid', gap: '12px' }}>
-            {/* 上传图片区已移至页面底部独立模块 */}
-            
-            {moduleTemplates.map((template, index) => {
-              return (
-                <button
-                  draggable
-                  key={`${template.iconName}-${index}`}
-                  title={template.label || template.iconName}
-                  onClick={() => addModuleFromTemplate(template)}
-                  onDragStart={(e) => {
-                    try {
-                      e.dataTransfer?.setData('application/json', JSON.stringify(template));
-                      e.dataTransfer!.effectAllowed = 'copy';
-                    } catch {}
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px',
-                    width: '100%',
-                    border: '1px solid rgba(255,255,255,0.04)',
-                    borderRadius: '14px',
-                    padding: '16px',
-                    background: 'rgba(255,255,255,0.02)',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-                    justifyContent: 'flex-start',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-                  }}
-                >
-                  <div
-                    style={{
-                      width: template.widthUnits === 2 ? '100px' : '52px',
-                      height: template.heightUnits === 2 ? '100px' : '52px',
-                      borderRadius: template.position.borderRadius / 3,
-                      background: template.gradient || template.backgroundColor || '#4A90E2',
-                      display: 'grid',
-                      placeItems: 'center',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                      backdropFilter: 'blur(8px)',
+
+        {/* Panel content */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {leftTab === 'trending' && <TrendingPanel key="trending" />}
+
+          {leftTab === 'images' && (
+            <ImageSearchPanel
+              onUseImage={(dataUrl, name) => {
+                const id = `img_${Date.now()}`;
+                setUploadedImages((prev: any[]) => [...prev, { id, dataURL: dataUrl, name }]);
+              }}
+            />
+          )}
+
+          {leftTab === 'templates' && (
+            <div style={{ flex: 1, overflow: 'auto', padding: '10px' }}>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {moduleTemplates.map((template, index) => (
+                  <button
+                    draggable
+                    key={`${template.iconName}-${index}`}
+                    title={template.label || template.iconName}
+                    onClick={() => addModuleFromTemplate(template)}
+                    onDragStart={(e) => {
+                      try {
+                        e.dataTransfer?.setData('application/json', JSON.stringify(template));
+                        e.dataTransfer!.effectAllowed = 'copy';
+                      } catch {}
                     }}
-                  />
-                  <div style={{ textAlign: 'left', flex: 1 }}>
-                    <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>{template.label || template.iconName}</div>
-                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                      {template.widthUnits}×{template.heightUnits} 网格
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      width: '100%',
+                      border: '1px solid rgba(255,255,255,0.04)',
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                      background: 'rgba(255,255,255,0.02)',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      justifyContent: 'flex-start',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: template.widthUnits === 2 ? 44 : 32,
+                        height: template.heightUnits === 2 ? 44 : 32,
+                        borderRadius: template.position.borderRadius / 4,
+                        background: template.gradient || template.backgroundColor || '#4A90E2',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{template.label || template.iconName}</div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 1 }}>
+                        {template.widthUnits}×{template.heightUnits} 格
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 底部独立上传模块（固定定位，不占用模块库空间） */}
-      <div style={{ position: 'fixed', left: 20, bottom: 20, width: 300, background: 'linear-gradient(180deg, #141414, #0f0f0f)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 12, padding: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', zIndex: 9999 }}>
+      <div style={{ position: 'fixed', left: 20, bottom: 20, width: 220, background: 'linear-gradient(180deg, #141414, #0f0f0f)', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 12, padding: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', zIndex: 9999 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             title={'上传图片（点击或拖拽到这里）'}
@@ -1602,7 +1631,48 @@ export default function App() {
       </div>
 
       {/* 中间：手机预览画板 */}
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', background: 'radial-gradient(circle at center, #1a1a1a 0%, #0f0f0f 100%)' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'radial-gradient(circle at center, #1a1a1a 0%, #0f0f0f 100%)' }}>
+        {/* 顶部工具栏 */}
+        <div style={{ height: 44, borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0, background: 'rgba(0,0,0,0.2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={handleUndo}
+              title="撤销 (Ctrl+Z)"
+              disabled={historyIndex <= 0}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)', color: historyIndex <= 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.7)', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              ↩ 撤销
+            </button>
+            <button
+              onClick={() => setShowGrid(s => !s)}
+              style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${showGrid ? 'rgba(102,126,234,0.5)' : 'rgba(255,255,255,0.08)'}`, background: showGrid ? 'rgba(102,126,234,0.12)' : 'rgba(255,255,255,0.04)', color: showGrid ? '#a5b4fc' : 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              {showGrid ? '隐藏网格' : '显示网格'}
+            </button>
+            <button
+              onClick={handleAddModule}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(102,126,234,0.3)', background: 'rgba(102,126,234,0.1)', color: '#a5b4fc', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              + 新增模块
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={() => exportViaCanvas('phone-canvas')}
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.1)', color: '#34d399', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              快速保存
+            </button>
+            <button
+              onClick={() => setShowExportDialog(true)}
+              style={{ padding: '5px 12px', borderRadius: 6, background: 'linear-gradient(135deg,#667eea,#764ba2)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              <Download size={12} />
+              高清导出
+            </button>
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
         <div
           id="phone-canvas"
           ref={previewRef}
@@ -1649,11 +1719,7 @@ export default function App() {
                 />
               );
             })}
-            {/* 当 showGrid 为 false 时，增加遮罩以隐藏背景中的网格/纹理，但保持模块可见 */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.2) 100%)' }} />
-            {!showGrid && (
-              <div style={{ position: 'absolute', inset: 0, background: '#0a0a0a', opacity: 1, pointerEvents: 'none', zIndex: 0 }} />
-            )}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.25) 100%)', pointerEvents: 'none' }} />
           </div>
 
           {/* 网格线 */}
@@ -1786,7 +1852,7 @@ export default function App() {
                 }}
               >
                 {/* 自定义图标图片背景 */}
-                {m.customIcon && (
+                {m.customIcon ? (
                   <img
                     src={m.customIcon}
                     alt={m.iconName}
@@ -1801,7 +1867,7 @@ export default function App() {
                       zIndex: 1
                     }}
                   />
-                )}
+                ) : null}
 
                 {/* 百分比填充条 */}
                 {m.percentage !== undefined && (
@@ -1893,7 +1959,7 @@ export default function App() {
                 )}
 
                 {/* 标签 */}
-                {m.label && (
+                {m.label ? (
                   <span style={{
                     fontSize: '26px',
                     color: m.iconColor,
@@ -1906,7 +1972,7 @@ export default function App() {
                   }}>
                     {m.label}
                   </span>
-                )}
+                ) : null}
               </div>
             );
           })}
@@ -1951,108 +2017,53 @@ export default function App() {
             </div>
           )}
         </div>
+        </div>
       </div>
 
       {/* 右侧：编辑面板 */}
-      <div style={{ width: '440px', background: 'linear-gradient(180deg, #1a1a1a 0%, #141414 100%)', color: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 20px rgba(0,0,0,0.3)' }}>
-        <div style={{ padding: '28px 28px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'linear-gradient(135deg, #2a5298 0%, #1e3a5f 100%)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '24px', fontWeight: 800, marginBottom: '6px', letterSpacing: '-0.5px', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>控制中心定制</div>
-              <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.75)', lineHeight: '1.4' }}>自定义你的专属控制中心</div>
-            </div>
-            <button
-              onClick={handleAddModule}
-              style={{
-                padding: '12px 20px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '16px',
-                cursor: 'pointer',
-                fontWeight: 700,
-                fontSize: '14px',
-                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px rgba(102, 126, 234, 0.5)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
-              }}
-            >
-              + 新增模块
-            </button>
-          </div>
+      <div style={{ width: '400px', background: '#141414', color: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-1px 0 0 rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'linear-gradient(135deg, rgba(102,126,234,0.15) 0%, rgba(118,75,162,0.1) 100%)' }}>
+          <div style={{ fontSize: '15px', fontWeight: 800, letterSpacing: '-0.3px', color: '#fff' }}>设置面板</div>
+          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>选择模块或调整背景与主题</div>
         </div>
 
         {/* 选项卡 */}
-        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.2)' }}>
-          <button
-            onClick={() => setSelectedTab('module')}
-            style={{
-              flex: 1,
-              padding: '18px 0',
-              background: selectedTab === 'module' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
-              color: selectedTab === 'module' ? '#fff' : 'rgba(255,255,255,0.5)',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: '15px',
-              transition: 'all 0.3s ease',
-              borderBottom: selectedTab === 'module' ? '3px solid #667eea' : '3px solid transparent',
-            }}
-          >
-            模块设置
-          </button>
-          <button
-            onClick={() => setSelectedTab('background')}
-            style={{
-              flex: 1,
-              padding: '18px 0',
-              background: selectedTab === 'background' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
-              color: selectedTab === 'background' ? '#fff' : 'rgba(255,255,255,0.5)',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: '15px',
-              transition: 'all 0.3s ease',
-              borderBottom: selectedTab === 'background' ? '3px solid #667eea' : '3px solid transparent',
-            }}
-          >
-            背景设置
-          </button>
-          <button
-            onClick={() => setSelectedTab('ai')}
-            style={{
-              flex: 1,
-              padding: '18px 0',
-              background: selectedTab === 'ai' ? 'linear-gradient(180deg, #242424 0%, #1e1e1e 100%)' : 'transparent',
-              color: selectedTab === 'ai' ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
-              border: 'none',
-              cursor: 'pointer',
-              fontWeight: 700,
-              fontSize: '15px',
-              transition: 'all 0.3s ease',
-              borderBottom: selectedTab === 'ai' ? '3px solid #a5b4fc' : '3px solid transparent',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-            }}
-          >
-            <Sparkles size={14} />
-            AI 助手
-          </button>
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.15)' }}>
+          {([
+            ['module', '模块', null],
+            ['background', '背景', null],
+            ['ai', 'AI 助手', true],
+          ] as const).map(([key, label, isAI]) => (
+            <button
+              key={key}
+              onClick={() => setSelectedTab(key as any)}
+              style={{
+                flex: 1,
+                padding: '12px 0',
+                background: selectedTab === key ? 'rgba(102,126,234,0.1)' : 'transparent',
+                color: selectedTab === key ? (isAI ? '#a5b4fc' : '#fff') : 'rgba(255,255,255,0.45)',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: selectedTab === key ? 700 : 500,
+                fontSize: '13px',
+                borderBottom: selectedTab === key ? `2px solid ${isAI ? '#a5b4fc' : '#667eea'}` : '2px solid transparent',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+              }}
+            >
+              {key === 'ai' && <Sparkles size={12} />}
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* 选项卡内容 */}
         <div style={{ flex: 1, overflow: 'auto' }}>
           {selectedTab === 'background' && (
-            <BackgroundTab
+            <BackgroundTab key="bg"
               backgroundLayers={backgroundLayers}
               backgroundBlur={backgroundBlur}
               onAddBackground={addBackgroundLayer}
@@ -2064,7 +2075,7 @@ export default function App() {
             />
           )}
           {selectedTab === 'module' && (
-            <ModuleTab
+            <ModuleTab key="module"
               selectedModule={selectedModule}
               selectedModules={selectedModules}
               onModuleUpdate={handleModuleUpdate}
@@ -2077,11 +2088,63 @@ export default function App() {
             />
           )}
           {selectedTab === 'ai' && (
-            <AIAssistant
-              modules={modules}
-              onApplyTheme={handleApplyTheme}
-              onBatchModuleUpdate={handleBatchModuleUpdate}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* AI sub-tabs */}
+              {/* AI 三个子标签 */}
+              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+                {([
+                  ['generate', '✨ 生图'],
+                  ['theme',    '🎨 主题'],
+                  ['batch',    '⚡ 批量'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setAiSubTab(key)}
+                    style={{
+                      flex: 1,
+                      padding: '9px 0',
+                      border: 'none',
+                      background: aiSubTab === key ? 'rgba(168,85,247,0.1)' : 'transparent',
+                      color: aiSubTab === key ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      borderBottom: aiSubTab === key ? '2px solid #a855f7' : '2px solid transparent',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ flex: 1, overflow: 'auto' }}>
+                {aiSubTab === 'generate' && (
+                  <AIImageGenerator
+                    onUseAsBackground={(dataUrl) => {
+                      addBackgroundLayer(dataUrl, 'AI生成背景');
+                      setSelectedTab('background');
+                    }}
+                    onUseAsModuleImage={(dataUrl, name) => {
+                      const id = `img_${Date.now()}`;
+                      setUploadedImages((prev: any[]) => [...prev, { id, dataURL: dataUrl, name }]);
+                    }}
+                  />
+                )}
+                {aiSubTab === 'theme' && (
+                  <AIAssistant
+                    modules={modules}
+                    onApplyTheme={handleApplyTheme}
+                    onBatchModuleUpdate={handleBatchModuleUpdate}
+                  />
+                )}
+                {aiSubTab === 'batch' && (
+                  <BatchIconGenerator
+                    modules={modules}
+                    onSetModuleIcon={setModuleIcon}
+                  />
+                )}
+              </div>
+            </div>
           )}
         </div>
 

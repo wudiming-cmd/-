@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/Administrator/Desktop/模块替換与背景调整/src/app/**)"
+      "Bash(npx vite*)",
+      "Bash(npm run*)",
+      "Bash(cd*)"
     ]
   }
 }

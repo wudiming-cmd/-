@@ -80,6 +80,50 @@ export function ExportDialog({ elementId, onClose }: ExportDialogProps) {
     wrapper.appendChild(clone);
     document.body.appendChild(wrapper);
 
+    // Normalize oklch() colors → rgba() so html2canvas can parse them
+    const colorCache = new Map<string, string>();
+    const resolveOklch = (val: string): string => {
+      if (!val || !val.includes('oklch')) return val;
+      if (colorCache.has(val)) return colorCache.get(val)!;
+      try {
+        const c = document.createElement('canvas');
+        c.width = c.height = 1;
+        const ctx2d = c.getContext('2d')!;
+        ctx2d.fillStyle = val;
+        ctx2d.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx2d.getImageData(0, 0, 1, 1).data;
+        const resolved = `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+        colorCache.set(val, resolved);
+        return resolved;
+      } catch {
+        return val;
+      }
+    };
+    const COLOR_PROPS = [
+      'color', 'background-color', 'border-top-color', 'border-right-color',
+      'border-bottom-color', 'border-left-color', 'outline-color',
+      'text-decoration-color', 'fill', 'stroke',
+    ];
+    const origElems = [el, ...Array.from(el.querySelectorAll<HTMLElement>('*'))];
+    const cloneElems = [clone, ...Array.from(clone.querySelectorAll<HTMLElement>('*'))];
+    origElems.forEach((origEl, idx) => {
+      const cloneEl = cloneElems[idx] as HTMLElement | undefined;
+      if (!cloneEl) return;
+      try {
+        const cs = window.getComputedStyle(origEl);
+        COLOR_PROPS.forEach((prop) => {
+          const v = cs.getPropertyValue(prop);
+          if (!v || !v.includes('oklch')) return;
+          const jsProp = prop.replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
+          try { (cloneEl.style as any)[jsProp] = resolveOklch(v); } catch {}
+        });
+        const bg = cs.getPropertyValue('background');
+        if (bg && bg.includes('oklch')) {
+          try { cloneEl.style.background = resolveOklch(bg); } catch {}
+        }
+      } catch {}
+    });
+
     try {
       const html2canvas = (await import('html2canvas')).default;
 

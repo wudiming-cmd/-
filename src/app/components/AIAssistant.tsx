@@ -263,11 +263,11 @@ export function AIAssistant({ modules, onApplyTheme, onBatchModuleUpdate }: AIAs
             {isGeneratingTheme ? '生成中…' : '生成主题'}
           </button>
 
-          {themeError && (
+          {themeError ? (
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontSize: 13 }}>
               {themeError}
             </div>
-          )}
+          ) : null}
 
           {/* Generated theme preview */}
           {generatedTheme && (
@@ -350,11 +350,11 @@ export function AIAssistant({ modules, onApplyTheme, onBatchModuleUpdate }: AIAs
             {isGeneratingPalette ? '生成中…' : '生成配色板'}
           </button>
 
-          {paletteError && (
+          {paletteError ? (
             <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontSize: 13 }}>
               {paletteError}
             </div>
-          )}
+          ) : null}
 
           {generatedPalette && (
             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>

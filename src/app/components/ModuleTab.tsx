@@ -4,7 +4,7 @@ import { ModuleData } from '../types';
 import { IconSelector } from './IconSelector';
 import { removeBackground } from '../utils/removeBg';
 import { analyzeImageWithAI } from '../utils/aiAnalyze';
-import { getImageDataURL } from '../utils/unsplashService';
+import { generateImage, fetchAsDataUrl } from '../utils/jimengService';
 
 interface ModuleTabProps {
   selectedModule: ModuleData | undefined;
@@ -60,39 +60,54 @@ export function ModuleTab({
   // 文生图相关状态
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [textPrompt, setTextPrompt] = useState('');
+  const [textGenStatus, setTextGenStatus] = useState('');
 
-  // 处理文生图
+  // AI智能填充 - 即梦快速生成
+  const [jimengPrompt, setJimengPrompt] = useState('');
+  const [isJimengGenerating, setIsJimengGenerating] = useState(false);
+  const [jimengStatus, setJimengStatus] = useState('');
+
+  // 文生图 — 即梦 AI
   const handleTextToImage = async () => {
-    if (!selectedModule || !textPrompt.trim()) {
-      alert('请输入图片描述');
-      return;
-    }
-
+    if (!selectedModule || !textPrompt.trim()) return;
     setIsGeneratingImage(true);
+    setTextGenStatus('');
     try {
-      console.log('开始生成图片...', {
-        提示词: textPrompt,
-      });
-
-      const searchQuery = textPrompt.trim();
-      
-      // 使用unsplash服务获取图片
-      const dataURL = await getImageDataURL(searchQuery);
-      
-      // 更新模块 - 只填充图标，不设置标签
-      onModuleUpdate(selectedModule.id, {
-        customIcon: dataURL,
-      });
-      
-      setIsGeneratingImage(false);
-      alert(`✨ 图片生成成功！\n\n🎨 描述: ${searchQuery}\n\n已自动填充到模块标`);
+      const result = await generateImage(
+        { prompt: textPrompt.trim(), ratio: '1:1', style: 'general' },
+        (msg) => setTextGenStatus(msg)
+      );
+      const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
+      onModuleUpdate(selectedModule.id, { customIcon: dataUrl });
       setTextPrompt('');
-      
-    } catch (error) {
-      console.error('图片生成失败:', error);
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      alert(`⚠️ 图片生成失败\n\n错误详情: ${errorMsg}`);
+      setTextGenStatus('✅ 已填充到模块');
+      setTimeout(() => setTextGenStatus(''), 2500);
+    } catch (err: any) {
+      setTextGenStatus(`❌ ${err.message || '生成失败'}`);
+    } finally {
       setIsGeneratingImage(false);
+    }
+  };
+
+  // AI智能填充 — 即梦快速生成
+  const handleJimengFill = async () => {
+    if (!selectedModule || !jimengPrompt.trim()) return;
+    setIsJimengGenerating(true);
+    setJimengStatus('');
+    try {
+      const result = await generateImage(
+        { prompt: jimengPrompt.trim(), ratio: '1:1', style: 'general' },
+        (msg) => setJimengStatus(msg)
+      );
+      const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
+      onModuleUpdate(selectedModule.id, { customIcon: dataUrl });
+      setJimengPrompt('');
+      setJimengStatus('✅ 已填充到模块');
+      setTimeout(() => setJimengStatus(''), 2500);
+    } catch (err: any) {
+      setJimengStatus(`❌ ${err.message || '生成失败'}`);
+    } finally {
+      setIsJimengGenerating(false);
     }
   };
 
@@ -445,95 +460,97 @@ export function ModuleTab({
           <Sparkles size={16} color="#667eea" />
           AI智能填充
         </div>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleAIFillUpload}
-          style={{ display: 'none' }}
-          id="ai-fill-upload"
-          disabled={isAIAnalyzing}
-        />
+
+        {/* 上传图片分析 */}
+        <input type="file" accept="image/*" onChange={handleAIFillUpload} style={{ display: 'none' }} id="ai-fill-upload" disabled={isAIAnalyzing} />
         <label
           htmlFor="ai-fill-upload"
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px',
-            border: '2px dashed rgba(102, 126, 234, 0.3)',
-            borderRadius: '16px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            padding: '16px', border: '2px dashed rgba(102,126,234,0.3)', borderRadius: '12px',
             cursor: isAIAnalyzing ? 'not-allowed' : 'pointer',
-            background: isAIAnalyzing ? '#0f0f0f' : 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)',
-            transition: 'all 0.2s',
-            opacity: isAIAnalyzing ? 0.6 : 1,
+            background: isAIAnalyzing ? '#0f0f0f' : 'linear-gradient(135deg,rgba(102,126,234,0.08),rgba(118,75,162,0.08))',
+            transition: 'all 0.2s', opacity: isAIAnalyzing ? 0.6 : 1,
           }}
-          onMouseEnter={(e) => {
-            if (!isAIAnalyzing) {
-              e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.6)';
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isAIAnalyzing) {
-              e.currentTarget.style.borderColor = 'rgba(102, 126, 234, 0.3)';
-              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%)';
-            }
-          }}
+          onMouseEnter={(e) => { if (!isAIAnalyzing) { e.currentTarget.style.borderColor = 'rgba(102,126,234,0.6)'; } }}
+          onMouseLeave={(e) => { if (!isAIAnalyzing) { e.currentTarget.style.borderColor = 'rgba(102,126,234,0.3)'; } }}
         >
-          <Sparkles size={32} color={isAIAnalyzing ? '#8f8f8f' : '#667eea'} />
-          <div style={{ marginTop: '12px', fontSize: '14px', color: isAIAnalyzing ? '#8f8f8f' : '#667eea', fontWeight: 600 }}>
-            {isAIAnalyzing ? 'AI分析中...' : '上传图片，AI自动配色'}
+          <Sparkles size={24} color={isAIAnalyzing ? '#8f8f8f' : '#667eea'} />
+          <div style={{ marginTop: '8px', fontSize: '13px', color: isAIAnalyzing ? '#8f8f8f' : '#667eea', fontWeight: 600 }}>
+            {isAIAnalyzing ? 'AI分析中…' : '上传图片，AI自动配色'}
           </div>
-          <div style={{ marginTop: '4px', fontSize: '11px', color: '#666', textAlign: 'center' }}>
-            AI会分析图片风格并自动填充<br />背景颜色、图标颜色和标签
+          <div style={{ marginTop: '3px', fontSize: '11px', color: '#666', textAlign: 'center' }}>
+            分析风格并自动填充背景、图标颜色
           </div>
         </label>
+
+        {/* 分隔线 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>或用即梦 AI 生成</span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+        </div>
+
+        {/* 即梦快速生成 */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input
+            value={jimengPrompt}
+            onChange={(e) => setJimengPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleJimengFill(); }}
+            placeholder="描述图标内容，即梦AI生成…"
+            disabled={isJimengGenerating}
+            style={{ flex: 1, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#fff', fontSize: 12, outline: 'none' }}
+          />
+          <button
+            onClick={handleJimengFill}
+            disabled={isJimengGenerating || !jimengPrompt.trim()}
+            style={{ padding: '8px 12px', borderRadius: 8, background: isJimengGenerating ? 'rgba(168,85,247,0.2)' : 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: isJimengGenerating || !jimengPrompt.trim() ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, flexShrink: 0 }}
+          >
+            {isJimengGenerating ? '…' : '生成'}
+          </button>
+        </div>
+        {jimengStatus ? (
+          <div style={{ marginTop: 6, fontSize: 11, color: jimengStatus.startsWith('✅') ? '#34d399' : jimengStatus.startsWith('❌') ? '#f87171' : '#a5b4fc', padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.04)' }}>
+            {jimengStatus}
+          </div>
+        ) : null}
       </div>
 
-      {/* 文生图 */}
+      {/* 文生图 — 即梦 AI */}
       <div>
-        <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Wand2 size={16} color="#667eea" />
-          文生图 - 智能生成图标
+        <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '10px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Wand2 size={16} color="#a855f7" />
+          文生图 · 即梦 AI 生成图标
         </div>
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input
             type="text"
             value={textPrompt}
             onChange={(e) => setTextPrompt(e.target.value)}
-            placeholder="输入图标描述"
-            style={{
-              width: '100%',
-              padding: '10px 14px',
-              background: '#1a1a1a',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '10px',
-              color: '#fff',
-              fontSize: '14px',
-              outline: 'none',
-            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleTextToImage(); }}
+            placeholder="描述图标内容，如：金色月亮图标"
+            disabled={isGeneratingImage}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#fff', fontSize: '13px', outline: 'none' }}
           />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={handleTextToImage}
-              disabled={isGeneratingImage}
-              style={{
-                padding: '8px 16px',
-                background: isGeneratingImage ? '#555' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                color: '#fff',
-                cursor: isGeneratingImage ? 'not-allowed' : 'pointer',
-                fontSize: '13px',
-                fontWeight: 600,
-                opacity: isGeneratingImage ? 0.6 : 1,
-              }}
-            >
-              {isGeneratingImage ? '生成中...' : '生成图标'}
-            </button>
-          </div>
+          <button
+            onClick={handleTextToImage}
+            disabled={isGeneratingImage || !textPrompt.trim()}
+            style={{ padding: '10px', background: isGeneratingImage || !textPrompt.trim() ? 'rgba(168,85,247,0.2)' : 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', borderRadius: '10px', color: '#fff', cursor: isGeneratingImage || !textPrompt.trim() ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            {isGeneratingImage ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 13, height: 13, border: '2px solid rgba(255,255,255,0.25)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
+                {textGenStatus || '生成中…'}
+              </span>
+            ) : (
+              <span>✨ 生成图标</span>
+            )}
+          </button>
+          {textGenStatus && !isGeneratingImage ? (
+            <div style={{ fontSize: 11, color: textGenStatus.startsWith('✅') ? '#34d399' : '#f87171', padding: '4px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.04)' }}>
+              {textGenStatus}
+            </div>
+          ) : null}
         </div>
       </div>
 
