@@ -14,6 +14,7 @@ interface ModuleTabProps {
   onBatchModuleUpdate?: (moduleIds: string[], updates: Partial<ModuleData>) => void;
   onSetModuleIcon?: (id: string, customIcon: string) => void;
   onSetModuleBackground?: (id: string, customImage: string) => void;
+  onSetModuleOverlay?: (id: string, overlayImage: string) => void;
   onDeselect: () => void;
   onDeleteModule: (moduleId: string) => void;
   onBatchGenerate?: (prompt: string) => void;
@@ -61,6 +62,7 @@ export function ModuleTab({
   onBatchModuleUpdate,
   onSetModuleIcon,
   onSetModuleBackground,
+  onSetModuleOverlay,
   onDeselect,
   onDeleteModule,
   onBatchGenerate,
@@ -83,6 +85,10 @@ export function ModuleTab({
   const isBatchMode = selectedModules.length > 0;
 
   const [isRemovingBg, setIsRemovingBg] = useState(false);
+
+  // 图上图 · 人物/IP 叠加层
+  const [isRemovingOverlayBg, setIsRemovingOverlayBg] = useState(false);
+  const overlayFileRef = useRef<HTMLInputElement | null>(null);
 
   // 文生图相关状态
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
@@ -197,6 +203,37 @@ export function ModuleTab({
       setJimengStatus(`❌ ${err.message || '生成失败'}`);
     } finally {
       setIsJimengGenerating(false);
+    }
+  };
+
+  const handleOverlayUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedModule || !onSetModuleOverlay) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) onSetModuleOverlay(selectedModule.id, ev.target.result as string);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleOverlayRemoveBg = async () => {
+    if (!selectedModule?.overlayImage || !onSetModuleOverlay) return;
+    setIsRemovingOverlayBg(true);
+    try {
+      const res = await fetch(selectedModule.overlayImage);
+      const blob = await res.blob();
+      const resultBlob = await removeBackground(blob);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) onSetModuleOverlay(selectedModule.id, ev.target.result as string);
+        setIsRemovingOverlayBg(false);
+      };
+      reader.readAsDataURL(resultBlob);
+    } catch (err) {
+      alert(`抠图失败: ${err instanceof Error ? err.message : '未知错误'}`);
+      setIsRemovingOverlayBg(false);
     }
   };
 
@@ -697,6 +734,54 @@ export function ModuleTab({
             outline: 'none',
           }}
         />
+      </div>
+
+      {/* 图上图 · 人物/IP 叠加层 */}
+      <div style={{ padding: '12px', background: 'rgba(168,85,247,0.06)', borderRadius: 10, border: '1px solid rgba(168,85,247,0.15)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+          <span style={{ fontSize: 16 }}>🎭</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#e9d5ff' }}>图上图 · 人物 / IP 叠加</span>
+        </div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 10, lineHeight: 1.5 }}>
+          上传人物/IP图片叠加在背景之上；建议先点「AI抠图」去除白底，效果更自然
+        </div>
+
+        {/* 上传按钮 */}
+        <input ref={overlayFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOverlayUpload} />
+        <button
+          onClick={() => overlayFileRef.current?.click()}
+          disabled={!onSetModuleOverlay}
+          style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1.5px dashed rgba(168,85,247,0.4)', background: 'rgba(168,85,247,0.08)', color: '#c4b5fd', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        >
+          <Upload size={13} />
+          {selectedModule.overlayImage ? '重新上传人物图片' : '上传人物 / IP 图片'}
+        </button>
+
+        {/* 预览 + 操作 */}
+        {selectedModule.overlayImage ? (
+          <div style={{ marginTop: 10 }}>
+            <img
+              src={selectedModule.overlayImage}
+              alt="overlay preview"
+              style={{ width: '100%', maxHeight: 140, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.04)', display: 'block' }}
+            />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button
+                onClick={handleOverlayRemoveBg}
+                disabled={isRemovingOverlayBg}
+                style={{ flex: 1, padding: '8px', background: isRemovingOverlayBg ? '#333' : 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', borderRadius: 8, color: '#fff', cursor: isRemovingOverlayBg ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, opacity: isRemovingOverlayBg ? 0.6 : 1 }}
+              >
+                {isRemovingOverlayBg ? '抠图中…' : '✂️ AI 抠图去背景'}
+              </button>
+              <button
+                onClick={() => onModuleUpdate(selectedModule.id, { overlayImage: undefined })}
+                style={{ padding: '8px 12px', background: '#dc3545', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12 }}
+              >
+                移除
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* 图标选择 */}

@@ -23,6 +23,7 @@ export interface ModuleData {
   label?: string;
   customIcon?: string;
   customImage?: string;
+  overlayImage?: string;
   percentage?: number;
   percentageColor?: string;
 }

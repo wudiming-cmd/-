@@ -733,6 +733,10 @@ export default function App() {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, customImage } : m));
   }, []);
 
+  const setModuleOverlay = useCallback((moduleId: string, overlayImage: string) => {
+    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, overlayImage } : m));
+  }, []);
+
   const handleApplyTheme = (perModuleUpdates: Array<{ id: string } & Partial<ModuleData>>) => {
     const nextModules = modules.map((m) => {
       const upd = perModuleUpdates.find((u) => u.id === m.id);
@@ -1871,13 +1875,44 @@ export default function App() {
                         zIndex: 1,
                       }}
                     />
-                    {/* 四周暗角渐变，让图片与模块背景融合，避免突兀 */}
                     <div style={{
                       position: 'absolute',
                       inset: 0,
                       zIndex: 2,
                       pointerEvents: 'none',
                       background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.35) 100%)',
+                      borderRadius: 'inherit',
+                    }} />
+                  </>
+                ) : null}
+
+                {/* 图上图 · 人物/IP 叠加层 */}
+                {m.overlayImage ? (
+                  <>
+                    <img
+                      src={m.overlayImage}
+                      alt="overlay"
+                      style={{
+                        width: '100%',
+                        height: '115%',
+                        objectFit: 'contain',
+                        objectPosition: 'center bottom',
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        zIndex: 4,
+                        filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.7))',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                    {/* 底部渐隐融合 */}
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0, left: 0, right: 0,
+                      height: '35%',
+                      background: 'linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 100%)',
+                      zIndex: 5,
+                      pointerEvents: 'none',
                       borderRadius: 'inherit',
                     }} />
                   </>
@@ -2097,6 +2132,7 @@ export default function App() {
               onBatchModuleUpdate={handleBatchModuleUpdate}
               onSetModuleIcon={setModuleIcon}
               onSetModuleBackground={setModuleBackground}
+              onSetModuleOverlay={setModuleOverlay}
               onDeselect={() => {
                 setSelectedModuleId(null);
                 setSelectedModuleIds([]);
