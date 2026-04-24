@@ -10,6 +10,7 @@ import { AIAssistant } from './components/AIAssistant';
 import AIImageGenerator from './components/AIImageGenerator';
 import BatchIconGenerator from './components/BatchIconGenerator';
 import BatchImageFiller from './components/BatchImageFiller';
+import WelcomeModal from './components/WelcomeModal';
 import {
   Plane,
   Music,
@@ -58,6 +59,9 @@ export default function App() {
   const [backgroundLayers, setBackgroundLayers] = useState<BackgroundLayer[]>([]);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(0);
   const [selectedTab, setSelectedTab] = useState<'background' | 'module' | 'ai'>('module');
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return !localStorage.getItem('cc_welcomed'); } catch { return true; }
+  });
   const [leftTab, setLeftTab] = useState<'trending' | 'images' | 'templates'>('trending');
   const [aiSubTab, setAiSubTab] = useState<'generate' | 'theme' | 'batch'>('generate');
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -2293,6 +2297,16 @@ export default function App() {
         <ExportDialog
           elementId="phone-canvas"
           onClose={() => setShowExportDialog(false)}
+        />
+      )}
+
+      {/* 欢迎引导弹窗 */}
+      {showWelcome && (
+        <WelcomeModal
+          onClose={() => {
+            setShowWelcome(false);
+            try { localStorage.setItem('cc_welcomed', '1'); } catch {}
+          }}
         />
       )}
     </div>
