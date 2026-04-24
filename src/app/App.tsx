@@ -9,6 +9,7 @@ import { ExportDialog } from './components/ExportDialog';
 import { AIAssistant } from './components/AIAssistant';
 import AIImageGenerator from './components/AIImageGenerator';
 import BatchIconGenerator from './components/BatchIconGenerator';
+import BatchImageFiller from './components/BatchImageFiller';
 import {
   Plane,
   Music,
@@ -2217,10 +2218,17 @@ export default function App() {
                   />
                 )}
                 {aiSubTab === 'batch' && (
-                  <BatchIconGenerator
-                    modules={modules}
-                    onSetModuleIcon={setModuleIcon}
-                  />
+                  <div>
+                    <BatchImageFiller
+                      modules={modules}
+                      onSetModuleBackground={setModuleBackground}
+                    />
+                    <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 16px 0' }} />
+                    <BatchIconGenerator
+                      modules={modules}
+                      onSetModuleIcon={setModuleIcon}
+                    />
+                  </div>
                 )}
               </div>
             </div>
