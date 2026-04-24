@@ -2229,7 +2229,7 @@ export default function App() {
                   <div>
                     <BatchImageFiller
                       modules={modules}
-                      onSetModuleBackground={setModuleBackground}
+                      onSetModuleOverlay={setModuleOverlay}
                     />
                     <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 16px 0' }} />
                     <BatchIconGenerator

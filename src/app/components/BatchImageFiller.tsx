@@ -4,7 +4,7 @@ import type { ModuleData } from '../types';
 
 interface Props {
   modules: ModuleData[];
-  onSetModuleBackground: (id: string, customImage: string) => void;
+  onSetModuleOverlay: (id: string, overlayImage: string) => void;
 }
 
 interface SlotState {
@@ -22,7 +22,7 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function BatchImageFiller({ modules, onSetModuleBackground }: Props) {
+export default function BatchImageFiller({ modules, onSetModuleOverlay }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [slots, setSlots] = useState<SlotState[]>([]);
   const [applying, setApplying] = useState(false);
@@ -62,7 +62,7 @@ export default function BatchImageFiller({ modules, onSetModuleBackground }: Pro
         continue;
       }
       try {
-        onSetModuleBackground(mod.id, slot.preview);
+        onSetModuleOverlay(mod.id, slot.preview);
         next[i] = { ...slot, status: 'filled' };
         setSlots([...next]);
       } catch {
@@ -91,7 +91,7 @@ export default function BatchImageFiller({ modules, onSetModuleBackground }: Pro
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{ width: 6, height: 6, borderRadius: 2, background: '#667eea' }} />
         <div style={{ width: 6, height: 6, borderRadius: 2, background: '#a855f7' }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#a0a0c0' }}>批量上传图片 → 自动填充模块</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#a0a0c0' }}>批量上传图片 → 填充图上图叠加层</span>
         <span style={{ fontSize: 10, color: '#5a5a8a', marginLeft: 2 }}>共 {sorted.length} 个模块</span>
       </div>
 
@@ -211,7 +211,7 @@ export default function BatchImageFiller({ modules, onSetModuleBackground }: Pro
       )}
 
       <div style={{ fontSize: 10, color: '#3a3a5a', textAlign: 'center' }}>
-        图片数量可少于模块数，多余模块保持原样
+        图片填入「图上图」层 · 可再调位置/缩放/抠图 · 数量可少于模块数
       </div>
     </div>
   );
