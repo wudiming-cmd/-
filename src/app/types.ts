@@ -23,6 +23,9 @@ export interface ModuleData {
   label?: string;
   customIcon?: string;
   customImage?: string;
+  customImageX?: number;    // object-position X 0-100
+  customImageY?: number;    // object-position Y 0-100
+  customImageScale?: number; // zoom scale 1-3
   overlayImage?: string;
   overlayX?: number;
   overlayY?: number;

@@ -1175,47 +1175,81 @@ export function ModuleTab({
         </label>
         {selectedModule.customImage && (
           <div style={{ marginTop: '12px' }}>
-            <img
-              src={selectedModule.customImage}
-              alt="Module background"
-              style={{
-                width: '100%',
-                height: '120px',
-                objectFit: 'cover',
-                borderRadius: '10px',
-              }}
-            />
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            {/* 预览 */}
+            <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', height: 110, background: '#111' }}>
+              <img
+                src={selectedModule.customImage}
+                alt="Module background"
+                style={{
+                  width: '100%', height: '100%',
+                  objectFit: 'cover',
+                  objectPosition: `${selectedModule.customImageX ?? 50}% ${selectedModule.customImageY ?? 50}%`,
+                  transform: (selectedModule.customImageScale ?? 1) !== 1 ? `scale(${selectedModule.customImageScale})` : undefined,
+                  transformOrigin: `${selectedModule.customImageX ?? 50}% ${selectedModule.customImageY ?? 50}%`,
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            {/* 位置 & 缩放滑块 */}
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* X */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>← 水平位置 →</span>
+                  <span style={{ fontSize: 11, color: '#a5b4fc' }}>{selectedModule.customImageX ?? 50}%</span>
+                </div>
+                <input type="range" min={0} max={100} step={1}
+                  value={selectedModule.customImageX ?? 50}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { customImageX: Number(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#667eea' }}
+                />
+              </div>
+              {/* Y */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>↕ 垂直位置</span>
+                  <span style={{ fontSize: 11, color: '#a5b4fc' }}>{selectedModule.customImageY ?? 50}%</span>
+                </div>
+                <input type="range" min={0} max={100} step={1}
+                  value={selectedModule.customImageY ?? 50}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { customImageY: Number(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#667eea' }}
+                />
+              </div>
+              {/* Scale */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>⊞ 缩放</span>
+                  <span style={{ fontSize: 11, color: '#a5b4fc' }}>{((selectedModule.customImageScale ?? 1) * 100).toFixed(0)}%</span>
+                </div>
+                <input type="range" min={100} max={300} step={1}
+                  value={(selectedModule.customImageScale ?? 1) * 100}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { customImageScale: Number(e.target.value) / 100 })}
+                  style={{ width: '100%', accentColor: '#667eea' }}
+                />
+              </div>
+              {/* Reset */}
+              <button
+                onClick={() => onModuleUpdate(selectedModule.id, { customImageX: 50, customImageY: 50, customImageScale: 1 })}
+                style={{ padding: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 7, color: 'rgba(255,255,255,0.4)', fontSize: 11, cursor: 'pointer' }}
+              >
+                重置位置与缩放
+              </button>
+            </div>
+
+            {/* AI 抠图 + 移除 */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
               <button
                 onClick={handleRemoveBackgroundFromImage}
                 disabled={isRemovingBg}
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  background: isRemovingBg ? '#555' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  cursor: isRemovingBg ? 'not-allowed' : 'pointer',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  opacity: isRemovingBg ? 0.6 : 1,
-                }}
+                style={{ flex: 1, padding: '8px', background: isRemovingBg ? '#555' : 'linear-gradient(135deg,#667eea,#764ba2)', border: 'none', borderRadius: '8px', color: '#fff', cursor: isRemovingBg ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: 600, opacity: isRemovingBg ? 0.6 : 1 }}
               >
-                {isRemovingBg ? '处理中...' : 'AI抠图'}
+                {isRemovingBg ? '处理中...' : '✂️ AI 抠图'}
               </button>
               <button
-                onClick={() => onModuleUpdate(selectedModule.id, { customImage: undefined })}
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  background: '#dc3545',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                }}
+                onClick={() => onModuleUpdate(selectedModule.id, { customImage: undefined, customImageX: undefined, customImageY: undefined, customImageScale: undefined })}
+                style={{ flex: 1, padding: '8px', background: '#dc3545', border: 'none', borderRadius: '8px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
               >
                 移除背景图
               </button>

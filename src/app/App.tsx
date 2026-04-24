@@ -1865,20 +1865,28 @@ export default function App() {
                 }}
               >
                 {/* 模块背景图（img 标签，避免 html2canvas CORS 限制）*/}
-                {m.customImage ? (
-                  <img
-                    src={m.customImage}
-                    alt=""
-                    style={{
-                      position: 'absolute', inset: 0,
-                      width: '100%', height: '100%',
-                      objectFit: 'cover',
-                      zIndex: 0,
-                      pointerEvents: 'none',
-                      display: 'block',
-                    }}
-                  />
-                ) : null}
+                {m.customImage ? (() => {
+                  const ix = m.customImageX ?? 50;
+                  const iy = m.customImageY ?? 50;
+                  const sc = m.customImageScale ?? 1;
+                  return (
+                    <img
+                      src={m.customImage}
+                      alt=""
+                      style={{
+                        position: 'absolute', inset: 0,
+                        width: '100%', height: '100%',
+                        objectFit: 'cover',
+                        objectPosition: `${ix}% ${iy}%`,
+                        transform: sc !== 1 ? `scale(${sc})` : undefined,
+                        transformOrigin: `${ix}% ${iy}%`,
+                        zIndex: 0,
+                        pointerEvents: 'none',
+                        display: 'block',
+                      }}
+                    />
+                  );
+                })() : null}
 
                 {/* 自定义图标图片背景 */}
                 {m.customIcon ? (
