@@ -1182,13 +1182,17 @@ export default function App() {
               const inlineBF = node.style.backdropFilter || (node.style as any).webkitBackdropFilter || (node.style as any)['-webkit-backdrop-filter'];
               const comp = clonedDoc.defaultView ? clonedDoc.defaultView.getComputedStyle(node) : null;
               const compBF = comp ? comp.backdropFilter || (comp as any)['-webkit-backdrop-filter'] : '';
-              if (inlineBF || compBF) {
+              const hasBF = (v: string) => Boolean(v) && v !== 'none';
+              if (hasBF(inlineBF) || hasBF(compBF)) {
                 // remove backdrop filters
                 try { node.style.backdropFilter = 'none'; } catch (e) {}
                 try { (node.style as any).webkitBackdropFilter = 'none'; } catch (e) {}
-                // set fallback background color and inset shadow to simulate blur
-                try { node.style.backgroundColor = 'rgba(255, 255, 255, 0.85)'; } catch (e) {}
-                try { node.style.boxShadow = 'inset 0 0 10px rgba(255,255,255,0.5)'; } catch (e) {}
+                // only add fallback bg when there is no customImage background
+                const hasBgImg = node.style.backgroundImage && node.style.backgroundImage !== 'none';
+                if (!hasBgImg) {
+                  try { node.style.backgroundColor = 'rgba(255, 255, 255, 0.85)'; } catch (e) {}
+                  try { node.style.boxShadow = 'inset 0 0 10px rgba(255,255,255,0.5)'; } catch (e) {}
+                }
               }
             } catch (err) {}
           });
@@ -1831,8 +1835,8 @@ export default function App() {
                   width: modulePosition.width,
                   height: modulePosition.height,
                   borderRadius: m.position.borderRadius,
-                  backgroundColor: m.customImage ? 'transparent' : (m.gradient ? undefined : m.backgroundColor),
-                  backgroundImage: m.customImage ? `url(${m.customImage})` : (m.gradient || undefined),
+                  backgroundColor: m.gradient ? undefined : m.backgroundColor,
+                  backgroundImage: m.customImage ? undefined : (m.gradient || undefined),
                   backgroundSize: 'cover',
                   backgroundPosition: 'center',
                   backgroundRepeat: 'no-repeat',
@@ -1845,8 +1849,8 @@ export default function App() {
                   boxSizing: 'border-box',
                   overflow: 'hidden',
                   userSelect: 'none',
-                  backdropFilter: m.customImage ? 'none' : 'blur(30px) saturate(180%)',
-                  WebkitBackdropFilter: m.customImage ? 'none' : 'blur(30px) saturate(180%)',
+                  backdropFilter: 'blur(30px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(30px) saturate(180%)',
                   transition: isDragging ? 'none' : 'all 0.18s ease',
                   transform: isDragging ? 'scale(1.05)' : isHoveringForFile ? 'scale(1.06)' : isSelected ? 'scale(1.02)' : 'scale(1)',
                   boxShadow: isFlashing
@@ -1859,6 +1863,22 @@ export default function App() {
                   zIndex: isSelected ? 1000 : isDragging ? 999 : 1,
                 }}
               >
+                {/* 模块背景图（img 标签，避免 html2canvas CORS 限制）*/}
+                {m.customImage ? (
+                  <img
+                    src={m.customImage}
+                    alt=""
+                    style={{
+                      position: 'absolute', inset: 0,
+                      width: '100%', height: '100%',
+                      objectFit: 'cover',
+                      zIndex: 0,
+                      pointerEvents: 'none',
+                      display: 'block',
+                    }}
+                  />
+                ) : null}
+
                 {/* 自定义图标图片背景 */}
                 {m.customIcon ? (
                   <>
@@ -1938,7 +1958,7 @@ export default function App() {
                   }} />
                 )}
 
-                {/* 光泽效果 */}
+                {/* 光泽效果（仅无背景图时显示）*/}
                 {!m.customImage && (
                   <div style={{
                     position: 'absolute',
