@@ -154,3 +154,41 @@ export async function batchAnalyzeModuleStyle(description: string): Promise<Them
   const content = await callGemini(prompt);
   return extractJSON<ThemeModule>(content);
 }
+
+// ── 新增：从图片提取风格描述，用于即梦批量生图 ──────────────────────────
+const GEMINI_VISION_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+export async function extractStyleFromImage(base64DataUrl: string): Promise<string> {
+  // 把 data:image/xxx;base64,XXXX 拆分
+  const [, mime = 'image/jpeg'] = base64DataUrl.match(/^data:([^;]+);base64,/) ?? [];
+  const base64 = base64DataUrl.replace(/^data:[^;]+;base64,/, '');
+
+  const res = await fetch(`${GEMINI_VISION_URL}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            inlineData: { mimeType: mime, data: base64 },
+          },
+          {
+            text: `请分析这张图片的视觉风格，输出一段20-40字的中文风格描述，专门用于AI绘图提示词。
+要求：
+1. 提取主色调（具体颜色词）
+2. 提取风格标签（卡通/写实/极简/插画等）
+3. 提取情感氛围（可爱/酷炫/温暖/神秘等）
+只输出描述文字，不要任何标点符号前缀或格式，例如：
+史迪奇蓝紫色调，3D卡通渲染风格，圆润可爱活泼氛围`,
+          },
+        ],
+      }],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 128 },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Gemini 图片分析失败 (${res.status})`);
+  const json = await res.json();
+  const text: string = json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  return text.trim().replace(/^["""'「」【】\s]+|["""'「」【】\s]+$/g, '');
+}

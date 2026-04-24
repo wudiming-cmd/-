@@ -2088,8 +2088,10 @@ export default function App() {
             <ModuleTab key="module"
               selectedModule={selectedModule}
               selectedModules={selectedModules}
+              allModules={modules}
               onModuleUpdate={handleModuleUpdate}
               onBatchModuleUpdate={handleBatchModuleUpdate}
+              onSetModuleIcon={setModuleIcon}
               onDeselect={() => {
                 setSelectedModuleId(null);
                 setSelectedModuleIds([]);

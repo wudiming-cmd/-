@@ -1,16 +1,19 @@
-import { Trash2, Upload, Image as ImageIcon, Sparkles, Wand2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Trash2, Upload, Image as ImageIcon, Sparkles, Wand2, Layers } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { ModuleData } from '../types';
 import { IconSelector } from './IconSelector';
 import { removeBackground } from '../utils/removeBg';
 import { analyzeImageWithAI } from '../utils/aiAnalyze';
 import { generateImage, fetchAsDataUrl } from '../utils/jimengService';
+import { extractStyleFromImage } from '../utils/geminiService';
 
 interface ModuleTabProps {
   selectedModule: ModuleData | undefined;
   selectedModules?: ModuleData[];
+  allModules?: ModuleData[];
   onModuleUpdate: (moduleId: string, updates: Partial<ModuleData>) => void;
   onBatchModuleUpdate?: (moduleIds: string[], updates: Partial<ModuleData>) => void;
+  onSetModuleIcon?: (id: string, customIcon: string) => void;
   onDeselect: () => void;
   onDeleteModule: (moduleId: string) => void;
   onBatchGenerate?: (prompt: string) => void;
@@ -31,8 +34,10 @@ const extractColorsFromGradient = (gradient: string | undefined): { start: strin
 export function ModuleTab({
   selectedModule,
   selectedModules = [],
+  allModules = [],
   onModuleUpdate,
   onBatchModuleUpdate,
+  onSetModuleIcon,
   onDeselect,
   onDeleteModule,
   onBatchGenerate,
@@ -62,10 +67,18 @@ export function ModuleTab({
   const [textPrompt, setTextPrompt] = useState('');
   const [textGenStatus, setTextGenStatus] = useState('');
 
-  // AI智能填充 - 即梦快速生成
+  // AI智能填充 - 即梦快速生成（单模块）
   const [jimengPrompt, setJimengPrompt] = useState('');
   const [isJimengGenerating, setIsJimengGenerating] = useState(false);
   const [jimengStatus, setJimengStatus] = useState('');
+
+  // 即梦风格批量填充（全画布）
+  const [styleRefImage, setStyleRefImage] = useState<string | null>(null);
+  const [detectedStyle, setDetectedStyle] = useState('');
+  const [isAnalyzingStyle, setIsAnalyzingStyle] = useState(false);
+  const [isBatchFilling, setIsBatchFilling] = useState(false);
+  const [batchFillProgress, setBatchFillProgress] = useState({ done: 0, total: 0, status: '' });
+  const styleFileRef = useRef<HTMLInputElement | null>(null);
 
   // 文生图 — 即梦 AI
   const handleTextToImage = async () => {
@@ -89,7 +102,56 @@ export function ModuleTab({
     }
   };
 
-  // AI智能填充 — 即梦快速生成
+  // 即梦·风格批量填充 ─────────────────────────────────
+  const handleStyleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setStyleRefImage(dataUrl);
+      setDetectedStyle('');
+      setIsAnalyzingStyle(true);
+      try {
+        const style = await extractStyleFromImage(dataUrl);
+        setDetectedStyle(style);
+      } catch (err: any) {
+        setDetectedStyle('');
+        alert(`风格分析失败：${err.message}`);
+      } finally {
+        setIsAnalyzingStyle(false);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleBatchStyleFill = async () => {
+    if (!detectedStyle || isBatchFilling || !onSetModuleIcon) return;
+    const targets = [...allModules].sort((a, b) =>
+      a.gridY !== b.gridY ? a.gridY - b.gridY : a.gridX - b.gridX
+    );
+    if (targets.length === 0) return;
+    setIsBatchFilling(true);
+    setBatchFillProgress({ done: 0, total: targets.length, status: '准备中…' });
+    for (let i = 0; i < targets.length; i++) {
+      const mod = targets[i];
+      const label = mod.label || mod.iconName || `模块${i + 1}`;
+      const prompt = `${detectedStyle}，${label}，iOS控制中心图标，圆角正方形`;
+      setBatchFillProgress({ done: i, total: targets.length, status: `(${i + 1}/${targets.length}) ${label}…` });
+      try {
+        const result = await generateImage({ prompt, ratio: '1:1', style: 'general' }, (msg) =>
+          setBatchFillProgress(p => ({ ...p, status: `(${i + 1}/${targets.length}) ${msg}` }))
+        );
+        const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
+        onSetModuleIcon(mod.id, dataUrl);
+      } catch { /* 单个失败不中断 */ }
+    }
+    setBatchFillProgress({ done: targets.length, total: targets.length, status: '✅ 全部完成' });
+    setIsBatchFilling(false);
+  };
+
+  // AI智能填充 — 即梦快速生成（单模块）
   const handleJimengFill = async () => {
     if (!selectedModule || !jimengPrompt.trim()) return;
     setIsJimengGenerating(true);
@@ -484,10 +546,71 @@ export function ModuleTab({
           </div>
         </label>
 
+        {/* ── 即梦·风格批量填充 ────────────────────────── */}
+        <div style={{ marginTop: 10, padding: '12px', background: 'rgba(102,126,234,0.06)', borderRadius: 10, border: '1px solid rgba(102,126,234,0.12)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <Layers size={13} color="#a855f7" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>即梦·风格识别 → 批量填充所有图标</span>
+          </div>
+
+          {/* 上传参考图 */}
+          <input ref={styleFileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleStyleImageUpload} />
+          <button
+            onClick={() => styleFileRef.current?.click()}
+            disabled={isAnalyzingStyle || isBatchFilling}
+            style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1.5px dashed rgba(168,85,247,0.35)', background: 'rgba(168,85,247,0.06)', color: '#c4b5fd', cursor: 'pointer', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            {styleRefImage ? (
+              <img src={styleRefImage} alt="参考图" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />
+            ) : <Upload size={13} />}
+            {isAnalyzingStyle ? 'AI 分析风格中…' : styleRefImage ? '重新选择参考图' : '上传参考图（Gemini 识别风格）'}
+          </button>
+
+          {/* 检测到的风格 */}
+          {detectedStyle ? (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 4 }}>识别到的风格描述（可修改）</div>
+              <textarea
+                value={detectedStyle}
+                onChange={e => setDetectedStyle(e.target.value)}
+                rows={2}
+                disabled={isBatchFilling}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: 7, color: '#e9d5ff', fontSize: 11, padding: '7px 9px', resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.55, boxSizing: 'border-box' }}
+              />
+            </div>
+          ) : null}
+
+          {/* 进度条 */}
+          {isBatchFilling ? (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ height: 3, background: 'rgba(168,85,247,0.15)', borderRadius: 3, overflow: 'hidden', marginBottom: 5 }}>
+                <div style={{ height: '100%', width: `${batchFillProgress.total ? Math.round(batchFillProgress.done / batchFillProgress.total * 100) : 0}%`, background: 'linear-gradient(90deg,#667eea,#a855f7)', borderRadius: 3, transition: 'width 0.4s' }} />
+              </div>
+              <div style={{ fontSize: 10, color: '#a78bfa' }}>{batchFillProgress.status}</div>
+            </div>
+          ) : null}
+
+          {/* 开始按钮 */}
+          {detectedStyle && !isBatchFilling ? (
+            <button
+              onClick={handleBatchStyleFill}
+              disabled={!onSetModuleIcon || allModules.length === 0}
+              style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 8, background: 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <Layers size={13} />
+              一键填充所有 {allModules.length} 个模块
+            </button>
+          ) : null}
+
+          {batchFillProgress.status === '✅ 全部完成' && !isBatchFilling ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', textAlign: 'center' }}>✅ 全部图标已按风格生成并填充完成</div>
+          ) : null}
+        </div>
+
         {/* 分隔线 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>或用即梦 AI 生成</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>或单独生成当前模块</span>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
         </div>
 
