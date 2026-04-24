@@ -1,11 +1,10 @@
-import { Trash2, Upload, Image as ImageIcon, Sparkles, Wand2, Layers } from 'lucide-react';
+import { Trash2, Upload, Image as ImageIcon, Wand2, Layers } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { ModuleData } from '../types';
 import { IconSelector } from './IconSelector';
 import { removeBackground } from '../utils/removeBg';
 import { analyzeImageWithAI } from '../utils/aiAnalyze';
 import { generateImage, fetchAsDataUrl } from '../utils/jimengService';
-import { extractStyleFromImage } from '../utils/geminiService';
 
 interface ModuleTabProps {
   selectedModule: ModuleData | undefined;
@@ -20,6 +19,28 @@ interface ModuleTabProps {
   batchPrompt?: string;
   setBatchPrompt?: (prompt: string) => void;
   isBatchGenerating?: boolean;
+}
+
+async function extractColorsFromCanvas(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 50; canvas.height = 50;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('canvas unavailable')); return; }
+      ctx.drawImage(img, 0, 0, 50, 50);
+      const d = ctx.getImageData(0, 0, 50, 50).data;
+      let r = 0, g = 0, b = 0, cnt = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; cnt++; }
+      r = Math.round(r / cnt); g = Math.round(g / cnt); b = Math.round(b / cnt);
+      const bright = (r + g + b) / 3 > 128;
+      const tone = r > g && r > b ? '暖红' : g > r && g > b ? '自然绿' : b > r && b > g ? '冷蓝' : '中性灰';
+      resolve(`${tone}色调，${bright ? '明亮清新' : '深暗沉稳'}风格，iOS控制中心图标`);
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = dataUrl;
+  });
 }
 
 const extractColorsFromGradient = (gradient: string | undefined): { start: string; end: string } => {
@@ -60,8 +81,7 @@ export function ModuleTab({
   const isBatchMode = selectedModules.length > 0;
 
   const [isRemovingBg, setIsRemovingBg] = useState(false);
-  const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
-  
+
   // 文生图相关状态
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [textPrompt, setTextPrompt] = useState('');
@@ -113,11 +133,16 @@ export function ModuleTab({
       setDetectedStyle('');
       setIsAnalyzingStyle(true);
       try {
-        const style = await extractStyleFromImage(dataUrl);
-        setDetectedStyle(style);
-      } catch (err: any) {
-        setDetectedStyle('');
-        alert(`风格分析失败：${err.message}`);
+        const analysis = await analyzeImageWithAI(dataUrl);
+        setDetectedStyle(analysis.description);
+      } catch {
+        try {
+          const style = await extractColorsFromCanvas(dataUrl);
+          setDetectedStyle(style);
+        } catch (fallbackErr: any) {
+          setDetectedStyle('');
+          alert(`风格分析失败：${fallbackErr.message}`);
+        }
       } finally {
         setIsAnalyzingStyle(false);
       }
@@ -127,7 +152,7 @@ export function ModuleTab({
   };
 
   const handleBatchStyleFill = async () => {
-    if (!detectedStyle || isBatchFilling || !onSetModuleIcon) return;
+    if (!detectedStyle || isBatchFilling) return;
     const targets = [...allModules].sort((a, b) =>
       a.gridY !== b.gridY ? a.gridY - b.gridY : a.gridX - b.gridX
     );
@@ -137,14 +162,14 @@ export function ModuleTab({
     for (let i = 0; i < targets.length; i++) {
       const mod = targets[i];
       const label = mod.label || mod.iconName || `模块${i + 1}`;
-      const prompt = `${detectedStyle}，${label}，iOS控制中心图标，圆角正方形`;
+      const prompt = `${detectedStyle}，${label}`;
       setBatchFillProgress({ done: i, total: targets.length, status: `(${i + 1}/${targets.length}) ${label}…` });
       try {
         const result = await generateImage({ prompt, ratio: '1:1', style: 'general' }, (msg) =>
           setBatchFillProgress(p => ({ ...p, status: `(${i + 1}/${targets.length}) ${msg}` }))
         );
         const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
-        onSetModuleIcon(mod.id, dataUrl);
+        onModuleUpdate(mod.id, { customImage: dataUrl });
       } catch { /* 单个失败不中断 */ }
     }
     setBatchFillProgress({ done: targets.length, total: targets.length, status: '✅ 全部完成' });
@@ -162,7 +187,7 @@ export function ModuleTab({
         (msg) => setJimengStatus(msg)
       );
       const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
-      onModuleUpdate(selectedModule.id, { customIcon: dataUrl });
+      onModuleUpdate(selectedModule.id, { customImage: dataUrl });
       setJimengPrompt('');
       setJimengStatus('✅ 已填充到模块');
       setTimeout(() => setJimengStatus(''), 2500);
@@ -170,68 +195,6 @@ export function ModuleTab({
       setJimengStatus(`❌ ${err.message || '生成失败'}`);
     } finally {
       setIsJimengGenerating(false);
-    }
-  };
-
-  const handleAIFillUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedModule) return;
-    const file = e.target.files?.[0];
-    if (file) {
-      setIsAIAnalyzing(true);
-      try {
-        // 读取图片为data URL
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          if (event.target?.result) {
-            const dataURL = event.target.result as string;
-
-            try {
-              // 使用AI分析图片
-              const analysis = await analyzeImageWithAI(dataURL);
-
-              // 应用AI分析结果
-              const updates: Partial<ModuleData> = {
-                customImage: dataURL,
-                label: analysis.label,
-                iconColor: analysis.iconColor,
-              };
-
-              if (analysis.gradient && analysis.gradient !== 'null') {
-                updates.gradient = analysis.gradient;
-                updates.backgroundColor = undefined;
-              } else {
-                updates.backgroundColor = analysis.backgroundColor;
-                updates.gradient = undefined;
-              }
-
-              onModuleUpdate(selectedModule.id, updates);
-
-              // 显示分析结果
-              alert(`✨ AI分析完成！\n\n📝 ${analysis.description}\n\n🎨 已自动填充：\n- 背景: ${analysis.gradient || analysis.backgroundColor}\n- 图标颜色: ${analysis.iconColor}\n- 标签: ${analysis.label}`);
-            } catch (error) {
-              console.error('AI分析失败:', error);
-              const errorMsg = error instanceof Error ? error.message : '未知错误';
-
-              // 提供更友好的错误提示
-              alert(`⚠️ AI分析遇到问题\n\n错误详情: ${errorMsg}\n\n💡 建议：\n1. 检查网络连接\n2. 确认API密钥有效\n3. 查看控制台了解详细错误\n\n图片已上传，您可以手动配色。`);
-
-              // 即使AI失败，也上传图片并设置默认配色
-              onModuleUpdate(selectedModule.id, {
-                customImage: dataURL,
-                backgroundColor: '#667eea',
-                iconColor: '#FFFFFF',
-                label: '图片'
-              });
-            }
-
-            setIsAIAnalyzing(false);
-          }
-        };
-        reader.readAsDataURL(file);
-      } catch (error) {
-        console.error('Failed to read file:', error);
-        setIsAIAnalyzing(false);
-      }
     }
   };
 
@@ -516,41 +479,11 @@ export function ModuleTab({
 
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* AI智能填充 */}
-      <div>
-        <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '12px', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sparkles size={16} color="#667eea" />
-          AI智能填充
-        </div>
-
-        {/* 上传图片分析 */}
-        <input type="file" accept="image/*" onChange={handleAIFillUpload} style={{ display: 'none' }} id="ai-fill-upload" disabled={isAIAnalyzing} />
-        <label
-          htmlFor="ai-fill-upload"
-          style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            padding: '16px', border: '2px dashed rgba(102,126,234,0.3)', borderRadius: '12px',
-            cursor: isAIAnalyzing ? 'not-allowed' : 'pointer',
-            background: isAIAnalyzing ? '#0f0f0f' : 'linear-gradient(135deg,rgba(102,126,234,0.08),rgba(118,75,162,0.08))',
-            transition: 'all 0.2s', opacity: isAIAnalyzing ? 0.6 : 1,
-          }}
-          onMouseEnter={(e) => { if (!isAIAnalyzing) { e.currentTarget.style.borderColor = 'rgba(102,126,234,0.6)'; } }}
-          onMouseLeave={(e) => { if (!isAIAnalyzing) { e.currentTarget.style.borderColor = 'rgba(102,126,234,0.3)'; } }}
-        >
-          <Sparkles size={24} color={isAIAnalyzing ? '#8f8f8f' : '#667eea'} />
-          <div style={{ marginTop: '8px', fontSize: '13px', color: isAIAnalyzing ? '#8f8f8f' : '#667eea', fontWeight: 600 }}>
-            {isAIAnalyzing ? 'AI分析中…' : '上传图片，AI自动配色'}
-          </div>
-          <div style={{ marginTop: '3px', fontSize: '11px', color: '#666', textAlign: 'center' }}>
-            分析风格并自动填充背景、图标颜色
-          </div>
-        </label>
-
-        {/* ── 即梦·风格批量填充 ────────────────────────── */}
-        <div style={{ marginTop: 10, padding: '12px', background: 'rgba(102,126,234,0.06)', borderRadius: 10, border: '1px solid rgba(102,126,234,0.12)' }}>
+      {/* 即梦·风格批量填充 */}
+      <div style={{ padding: '12px', background: 'rgba(102,126,234,0.06)', borderRadius: 10, border: '1px solid rgba(102,126,234,0.12)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <Layers size={13} color="#a855f7" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>即梦·风格识别 → 批量填充所有图标</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>即梦·风格识别 → 批量填充模块背景</span>
           </div>
 
           {/* 上传参考图 */}
@@ -563,7 +496,7 @@ export function ModuleTab({
             {styleRefImage ? (
               <img src={styleRefImage} alt="参考图" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />
             ) : <Upload size={13} />}
-            {isAnalyzingStyle ? 'AI 分析风格中…' : styleRefImage ? '重新选择参考图' : '上传参考图（Gemini 识别风格）'}
+            {isAnalyzingStyle ? 'AI 分析风格中…' : styleRefImage ? '重新选择参考图' : '上传参考图（AI 识别风格）'}
           </button>
 
           {/* 检测到的风格 */}
@@ -594,7 +527,7 @@ export function ModuleTab({
           {detectedStyle && !isBatchFilling ? (
             <button
               onClick={handleBatchStyleFill}
-              disabled={!onSetModuleIcon || allModules.length === 0}
+              disabled={allModules.length === 0}
               style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 8, background: 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
               <Layers size={13} />
@@ -603,24 +536,23 @@ export function ModuleTab({
           ) : null}
 
           {batchFillProgress.status === '✅ 全部完成' && !isBatchFilling ? (
-            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', textAlign: 'center' }}>✅ 全部图标已按风格生成并填充完成</div>
+            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', textAlign: 'center' }}>✅ 全部模块背景已按风格生成并填充完成</div>
           ) : null}
         </div>
 
-        {/* 分隔线 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
+      {/* 即梦快速生成（单模块） */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>或单独生成当前模块</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', whiteSpace: 'nowrap' }}>单独生成当前模块背景</span>
           <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
         </div>
-
-        {/* 即梦快速生成 */}
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             value={jimengPrompt}
             onChange={(e) => setJimengPrompt(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleJimengFill(); }}
-            placeholder="描述图标内容，即梦AI生成…"
+            placeholder="描述内容，即梦AI生成背景…"
             disabled={isJimengGenerating}
             style={{ flex: 1, padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#fff', fontSize: 12, outline: 'none' }}
           />
