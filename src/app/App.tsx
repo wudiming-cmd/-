@@ -1853,20 +1853,30 @@ export default function App() {
               >
                 {/* 自定义图标图片背景 */}
                 {m.customIcon ? (
-                  <img
-                    src={m.customIcon}
-                    alt={m.iconName}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      borderRadius: m.position.borderRadius,
+                  <>
+                    <img
+                      src={m.customIcon}
+                      alt={m.iconName}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        zIndex: 1,
+                      }}
+                    />
+                    {/* 四周暗角渐变，让图片与模块背景融合，避免突兀 */}
+                    <div style={{
                       position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      zIndex: 1
-                    }}
-                  />
+                      inset: 0,
+                      zIndex: 2,
+                      pointerEvents: 'none',
+                      background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.35) 100%)',
+                      borderRadius: 'inherit',
+                    }} />
+                  </>
                 ) : null}
 
                 {/* 百分比填充条 */}

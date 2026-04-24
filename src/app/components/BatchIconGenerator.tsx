@@ -16,18 +16,18 @@ interface BatchItem {
 }
 
 const ITEMS: BatchItem[] = [
-  { label: '4格连体图标', color: '#4a8cff', placeholder: '浅蓝灰背景，飞机/WiFi/蓝牙/信号，史迪奇蓝色调' },
-  { label: '音乐播放卡片', color: '#e040a0', placeholder: '史迪奇蓝紫渐变，白色音符，夏威夷花朵点缀' },
-  { label: '刷新按钮', color: '#c0a0e0', placeholder: '史迪奇蓝圆形，白色刷新箭头' },
-  { label: '铃铛按钮', color: '#b0b060', placeholder: '深蓝圆形，白色铃铛，史迪奇主题' },
-  { label: '手电筒', color: '#e0a030', placeholder: '珊瑚橙圆形，白色手电筒图标' },
-  { label: '闹钟', color: '#d0a020', placeholder: '暖黄圆形，白色闹钟图标' },
-  { label: '亮度滑块', color: '#d0d060', placeholder: '史迪奇蓝系竖向渐变，太阳图标' },
-  { label: '音量滑块', color: '#909090', placeholder: '灰蓝竖向渐变，白色喇叭图标' },
-  { label: '专注模式长条', color: '#608060', placeholder: '深海蓝长条，月亮图标，史迪奇星空夏威夷风', span: 'full' },
-  { label: '计算器', color: '#e04040', placeholder: '珊瑚红圆形，白色计算器图标', span: 'third' },
-  { label: '相机', color: '#4080e0', placeholder: '史迪奇蓝圆形，白色相机图标', span: 'third' },
-  { label: '电量', color: '#40c070', placeholder: '薄荷绿圆形，白色电池图标', span: 'third' },
+  { label: '4格连体图标', color: '#4a8cff', placeholder: '待填入' },
+  { label: '音乐播放卡片', color: '#e040a0', placeholder: '待填入' },
+  { label: '刷新按钮',    color: '#c0a0e0', placeholder: '待填入' },
+  { label: '铃铛按钮',    color: '#b0b060', placeholder: '待填入' },
+  { label: '手电筒',      color: '#e0a030', placeholder: '待填入' },
+  { label: '闹钟',        color: '#d0a020', placeholder: '待填入' },
+  { label: '亮度滑块',    color: '#d0d060', placeholder: '待填入' },
+  { label: '音量滑块',    color: '#909090', placeholder: '待填入' },
+  { label: '专注模式长条', color: '#608060', placeholder: '待填入', span: 'full' },
+  { label: '计算器',      color: '#e04040', placeholder: '待填入', span: 'third' },
+  { label: '相机',        color: '#4080e0', placeholder: '待填入', span: 'third' },
+  { label: '电量',        color: '#40c070', placeholder: '待填入', span: 'third' },
 ];
 
 type Status = 'idle' | 'generating' | 'done' | 'error';
@@ -39,8 +39,7 @@ const statusStyle = (s: Status): React.CSSProperties => ({
 });
 
 export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) {
-  // Pre-fill with default descriptions so user can edit them directly
-  const [prompts, setPrompts] = useState<string[]>(ITEMS.map(item => item.placeholder));
+  const [prompts, setPrompts] = useState<string[]>(ITEMS.map(() => ''));
   const [statuses, setStatuses] = useState<Status[]>(ITEMS.map(() => 'idle'));
   const [statusTexts, setStatusTexts] = useState<string[]>(ITEMS.map(() => '待生成'));
   const [previews, setPreviews] = useState<(string | null)[]>(ITEMS.map(() => null));
@@ -61,10 +60,14 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
   };
 
   const generateOne = async (i: number) => {
-    const prompt = (prompts[i] || ITEMS[i].placeholder).trim();
+    const prompt = prompts[i].trim();
     const mod = sortedModules[i];
     if (!mod) {
       setItemStatus(i, 'error', '无对应模块');
+      return;
+    }
+    if (!prompt) {
+      setItemStatus(i, 'error', '请先填写描述词');
       return;
     }
     setItemStatus(i, 'generating', '提交中…');
@@ -91,16 +94,24 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
     setStatuses(resetS);
     setStatusTexts(resetT);
 
-    for (let i = 0; i < total; i++) {
+    // Count only items with prompts
+    const toGenerate = prompts.map((p, i) => ({ i, hasPrompt: p.trim().length > 0 }));
+    let completed = 0;
+    for (const { i, hasPrompt } of toGenerate) {
+      if (!hasPrompt) {
+        setItemStatus(i, 'idle', '跳过（未填写）');
+        continue;
+      }
       await generateOne(i);
-      setDone(i + 1);
+      completed++;
+      setDone(completed);
     }
     setRunning(false);
   };
 
   const handleClear = () => {
     if (running) return;
-    setPrompts(ITEMS.map(item => item.placeholder));
+    setPrompts(ITEMS.map(() => ''));
     setStatuses(ITEMS.map(() => 'idle'));
     setStatusTexts(ITEMS.map(() => '待生成'));
     setPreviews(ITEMS.map(() => null));
