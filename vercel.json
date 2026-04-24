@@ -3,6 +3,10 @@
     {
       "source": "/api/volcengine",
       "destination": "https://visual.volcengineapi.com"
+    },
+    {
+      "source": "/api/serpapi/:path*",
+      "destination": "https://serpapi.com/:path*"
     }
   ],
   "headers": [

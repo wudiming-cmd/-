@@ -36,11 +36,16 @@ export default defineConfig({
 
   server: {
     proxy: {
-      // Proxy Volcengine CV API to avoid browser CORS restrictions
       '/api/volcengine': {
         target: 'https://visual.volcengineapi.com',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api\/volcengine/, ''),
+        secure: true,
+      },
+      '/api/serpapi': {
+        target: 'https://serpapi.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/serpapi/, ''),
         secure: true,
       },
     },
