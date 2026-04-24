@@ -13,6 +13,7 @@ interface ModuleTabProps {
   onModuleUpdate: (moduleId: string, updates: Partial<ModuleData>) => void;
   onBatchModuleUpdate?: (moduleIds: string[], updates: Partial<ModuleData>) => void;
   onSetModuleIcon?: (id: string, customIcon: string) => void;
+  onSetModuleBackground?: (id: string, customImage: string) => void;
   onDeselect: () => void;
   onDeleteModule: (moduleId: string) => void;
   onBatchGenerate?: (prompt: string) => void;
@@ -59,6 +60,7 @@ export function ModuleTab({
   onModuleUpdate,
   onBatchModuleUpdate,
   onSetModuleIcon,
+  onSetModuleBackground,
   onDeselect,
   onDeleteModule,
   onBatchGenerate,
@@ -152,7 +154,7 @@ export function ModuleTab({
   };
 
   const handleBatchStyleFill = async () => {
-    if (!detectedStyle || isBatchFilling) return;
+    if (!detectedStyle || isBatchFilling || !onSetModuleBackground) return;
     const targets = [...allModules].sort((a, b) =>
       a.gridY !== b.gridY ? a.gridY - b.gridY : a.gridX - b.gridX
     );
@@ -161,15 +163,14 @@ export function ModuleTab({
     setBatchFillProgress({ done: 0, total: targets.length, status: '准备中…' });
     for (let i = 0; i < targets.length; i++) {
       const mod = targets[i];
-      const label = mod.label || mod.iconName || `模块${i + 1}`;
-      const prompt = `${detectedStyle}，${label}`;
-      setBatchFillProgress({ done: i, total: targets.length, status: `(${i + 1}/${targets.length}) ${label}…` });
+      const prompt = `${detectedStyle}，纯抽象背景，无图标无文字`;
+      setBatchFillProgress({ done: i, total: targets.length, status: `(${i + 1}/${targets.length}) 生成中…` });
       try {
         const result = await generateImage({ prompt, ratio: '1:1', style: 'general' }, (msg) =>
           setBatchFillProgress(p => ({ ...p, status: `(${i + 1}/${targets.length}) ${msg}` }))
         );
         const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
-        onModuleUpdate(mod.id, { customImage: dataUrl });
+        onSetModuleBackground(mod.id, dataUrl);
       } catch { /* 单个失败不中断 */ }
     }
     setBatchFillProgress({ done: targets.length, total: targets.length, status: '✅ 全部完成' });
@@ -178,16 +179,17 @@ export function ModuleTab({
 
   // AI智能填充 — 即梦快速生成（单模块）
   const handleJimengFill = async () => {
-    if (!selectedModule || !jimengPrompt.trim()) return;
+    if (!selectedModule || !jimengPrompt.trim() || !onSetModuleBackground) return;
     setIsJimengGenerating(true);
     setJimengStatus('');
     try {
+      const prompt = `${jimengPrompt.trim()}，纯抽象背景，无图标无文字`;
       const result = await generateImage(
-        { prompt: jimengPrompt.trim(), ratio: '1:1', style: 'general' },
+        { prompt, ratio: '1:1', style: 'general' },
         (msg) => setJimengStatus(msg)
       );
       const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
-      onModuleUpdate(selectedModule.id, { customImage: dataUrl });
+      onSetModuleBackground(selectedModule.id, dataUrl);
       setJimengPrompt('');
       setJimengStatus('✅ 已填充到模块');
       setTimeout(() => setJimengStatus(''), 2500);
@@ -527,7 +529,7 @@ export function ModuleTab({
           {detectedStyle && !isBatchFilling ? (
             <button
               onClick={handleBatchStyleFill}
-              disabled={allModules.length === 0}
+              disabled={allModules.length === 0 || !onSetModuleBackground}
               style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 8, background: 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
               <Layers size={13} />
@@ -558,7 +560,7 @@ export function ModuleTab({
           />
           <button
             onClick={handleJimengFill}
-            disabled={isJimengGenerating || !jimengPrompt.trim()}
+            disabled={isJimengGenerating || !jimengPrompt.trim() || !onSetModuleBackground}
             style={{ padding: '8px 12px', borderRadius: 8, background: isJimengGenerating ? 'rgba(168,85,247,0.2)' : 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: isJimengGenerating || !jimengPrompt.trim() ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 700, flexShrink: 0 }}
           >
             {isJimengGenerating ? '…' : '生成'}

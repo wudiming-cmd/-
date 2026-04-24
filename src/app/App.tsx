@@ -724,9 +724,13 @@ export default function App() {
     commitCanvasState(nextModules);
   };
 
-  // Functional update — safe for concurrent / sequential calls (no stale closure)
+  // Functional updates — safe for concurrent / sequential calls (no stale closure)
   const setModuleIcon = useCallback((moduleId: string, customIcon: string) => {
     setModules(prev => prev.map(m => m.id === moduleId ? { ...m, customIcon } : m));
+  }, []);
+
+  const setModuleBackground = useCallback((moduleId: string, customImage: string) => {
+    setModules(prev => prev.map(m => m.id === moduleId ? { ...m, customImage } : m));
   }, []);
 
   const handleApplyTheme = (perModuleUpdates: Array<{ id: string } & Partial<ModuleData>>) => {
@@ -2092,6 +2096,7 @@ export default function App() {
               onModuleUpdate={handleModuleUpdate}
               onBatchModuleUpdate={handleBatchModuleUpdate}
               onSetModuleIcon={setModuleIcon}
+              onSetModuleBackground={setModuleBackground}
               onDeselect={() => {
                 setSelectedModuleId(null);
                 setSelectedModuleIds([]);
