@@ -312,7 +312,7 @@ export function ExportDialog({ elementId, onClose }: ExportDialogProps) {
         </div>
 
         {/* Status */}
-        {status.text && (
+        {status.text ? (
           <div style={{
             marginBottom: 16,
             padding: '10px 14px',
@@ -329,12 +329,12 @@ export function ExportDialog({ elementId, onClose }: ExportDialogProps) {
             alignItems: 'center',
             gap: 8,
           }}>
-            {status.type === 'loading' && (
+            {status.type === 'loading' ? (
               <div style={{ width: 14, height: 14, border: '2px solid rgba(165,180,252,0.3)', borderTopColor: '#a5b4fc', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-            )}
+            ) : null}
             {status.text}
           </div>
-        )}
+        ) : null}
 
         {/* Export button */}
         <button

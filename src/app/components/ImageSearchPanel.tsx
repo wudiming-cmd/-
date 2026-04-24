@@ -135,11 +135,11 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
               placeholder="搜索图片资源..."
               style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: 12, padding: '7px 8px' }}
             />
-            {query && (
+            {query ? (
               <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: 'rgba(255,255,255,0.3)', display: 'grid', placeItems: 'center' }}>
                 <X size={11} />
               </button>
-            )}
+            ) : null}
           </div>
           <button
             onClick={() => search(query)}
