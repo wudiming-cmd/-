@@ -1,9 +1,36 @@
 import React, { useState, useRef } from 'react';
 import { Search, X, ImageIcon } from 'lucide-react';
 
-const SERPAPI_KEY = '6623843769a6e0836519e7e6b67f5d3b1cae972ccfd1af64774a225cdd81b7d3';
-// 免费申请：https://pixabay.com/api/docs/  注册后粘贴到这里
-const PIXABAY_KEY = '48031064-68e3b6e7fb1f4b4e3a5a0c7b4';
+// Pixabay 免费 key（免费注册：https://pixabay.com/api/docs/）
+// 不填时自动跳过，只使用 Openverse
+const PIXABAY_KEY = '';
+
+// 常用中文词 → 英文映射，提升 Openverse 搜索质量
+const ZH_TO_EN: Record<string, string> = {
+  '极简美学': 'minimal aesthetic wallpaper',
+  'iOS界面': 'iOS interface design',
+  '玻璃质感': 'glass texture design',
+  '渐变配色': 'gradient color background',
+  '暗黑风格': 'dark theme background',
+  '赛博朋克': 'cyberpunk neon city',
+  '3D图标': '3D icon render',
+  '霓虹发光': 'neon glow light',
+  '史迪奇': 'stitch disney character',
+  '极简': 'minimalist',
+  '壁纸': 'wallpaper',
+  '星空': 'starry sky',
+  '山水': 'landscape nature',
+  '城市': 'city skyline',
+  '抽象': 'abstract art',
+};
+
+function translateQuery(q: string): string {
+  const mapped = ZH_TO_EN[q.trim()];
+  if (mapped) return mapped;
+  // 如果输入是中文，附加英文关键词兜底
+  if (/[一-龥]/.test(q)) return q + ' wallpaper';
+  return q;
+}
 
 interface ImageResult {
   title: string;
@@ -16,36 +43,38 @@ interface ImageSearchPanelProps {
   onUseImage: (dataUrl: string, name: string) => void;
 }
 
-const QUICK_TAGS = ['极简美学', 'iOS界面', '玻璃质感', '渐变配色', '暗黑风格', '赛博朋克', '3D图标', '霓虹发光'];
+const QUICK_TAGS = ['极简美学', '玻璃质感', '赛博朋克', '暗黑风格', '渐变配色', '霓虹发光', '星空', '抽象'];
 
-// ─── Pinterest via SerpAPI proxy ────────────────────────────────────────────
-async function searchViaPinterest(q: string, signal: AbortSignal): Promise<ImageResult[]> {
-  const url = `/api/serpapi/search.json?engine=pinterest&q=${encodeURIComponent(q)}&api_key=${SERPAPI_KEY}`;
+// ─── Openverse：完全免费、无需注册、原生 CORS ────────────────────────────────
+async function searchViaOpenverse(q: string, signal: AbortSignal): Promise<ImageResult[]> {
+  const en = translateQuery(q);
+  const url = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(en)}&page_size=24&license_type=all`;
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`SerpAPI HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Openverse ${res.status}`);
   const json = await res.json();
-  if (json.error) throw new Error(json.error);
-  return (json.pins || []).slice(0, 24).map((pin: any) => ({
-    title: pin.title || pin.description || q,
-    thumbnail: pin.images?.['236x']?.url || pin.image_src || '',
-    original: pin.images?.['736x']?.url || pin.images?.orig?.url || pin.image_src || '',
-    source: 'Pinterest',
-  })).filter((i: ImageResult) => i.thumbnail);
+  return (json.results || []).slice(0, 24).map((img: any) => ({
+    title: img.title || q,
+    thumbnail: img.thumbnail || img.url,
+    original: img.url,
+    source: 'Openverse',
+  })).filter((i: ImageResult) => Boolean(i.thumbnail));
 }
 
-// ─── Pixabay（CORS 原生支持，无需代理）──────────────────────────────────────
+// ─── Pixabay：需要免费 key，CORS 原生支持 ────────────────────────────────────
 async function searchViaPixabay(q: string, signal: AbortSignal): Promise<ImageResult[]> {
-  if (!PIXABAY_KEY || PIXABAY_KEY.startsWith('YOUR_')) throw new Error('Pixabay key not configured');
-  const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(q)}&image_type=photo&per_page=24&safesearch=true&lang=zh`;
+  if (!PIXABAY_KEY) throw new Error('no key');
+  const en = translateQuery(q);
+  const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(en)}&image_type=photo&per_page=24&safesearch=true`;
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`Pixabay HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Pixabay ${res.status}`);
   const json = await res.json();
+  if (json.error) throw new Error(json.error);
   return (json.hits || []).slice(0, 24).map((img: any) => ({
     title: img.tags || q,
-    thumbnail: img.previewURL || img.webformatURL,
-    original: img.webformatURL || img.largeImageURL,
+    thumbnail: img.webformatURL || img.previewURL,
+    original: img.largeImageURL || img.webformatURL,
     source: 'Pixabay',
-  })).filter((i: ImageResult) => i.thumbnail);
+  })).filter((i: ImageResult) => Boolean(i.thumbnail));
 }
 
 const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
@@ -67,25 +96,27 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
     setResults([]);
     try {
       let items: ImageResult[] = [];
-      // Primary: Pinterest
-      try {
-        items = await searchViaPinterest(q, abortRef.current.signal);
-        if (items.length > 0) setSource('Pinterest');
-      } catch (e1: any) {
-        if (e1.name === 'AbortError') throw e1;
-        // Fallback: Pixabay
+
+      // 先试 Pixabay（如果配置了 key）
+      if (PIXABAY_KEY) {
         try {
           items = await searchViaPixabay(q, abortRef.current.signal);
           if (items.length > 0) setSource('Pixabay');
-        } catch (e2: any) {
-          if (e2.name === 'AbortError') throw e2;
-          throw new Error('两个图片源均不可用，请检查网络或稍后重试');
+        } catch (e: any) {
+          if (e.name === 'AbortError') throw e;
         }
       }
+
+      // 没有结果再试 Openverse
+      if (items.length === 0) {
+        items = await searchViaOpenverse(q, abortRef.current.signal);
+        if (items.length > 0) setSource('Openverse');
+      }
+
       setResults(items);
-      if (items.length === 0) setError('未找到相关图片，换个关键词试试');
+      if (items.length === 0) setError('未找到结果，换个关键词试试（推荐用英文）');
     } catch (err: any) {
-      if (err.name !== 'AbortError') setError(err.message || '搜索失败');
+      if (err.name !== 'AbortError') setError(err.message || '搜索失败，请检查网络');
     } finally {
       setLoading(false);
     }
@@ -95,12 +126,12 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
     setConverting(img.thumbnail);
     try {
       const src = img.original || img.thumbnail;
-      // Try CORS fetch first
+      // 尝试 CORS fetch → canvas drawImage → 直接用 URL
       try {
         const response = await fetch(src, { mode: 'cors' });
         const blob = await response.blob();
-        const reader = new FileReader();
         const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
           reader.onerror = reject;
           reader.readAsDataURL(blob);
@@ -108,20 +139,18 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
         onUseImage(dataUrl, img.title);
         return;
       } catch { /* fall through */ }
-      // Try canvas drawImage
       try {
         const c = document.createElement('canvas');
-        c.width = 400; c.height = 400;
+        c.width = 600; c.height = 600;
         const ctx = c.getContext('2d')!;
         const imgEl = new Image();
         imgEl.crossOrigin = 'anonymous';
         imgEl.src = src;
         await new Promise<void>((res) => { imgEl.onload = () => res(); imgEl.onerror = () => res(); });
-        ctx.drawImage(imgEl, 0, 0, 400, 400);
-        onUseImage(c.toDataURL('image/jpeg', 0.9), img.title);
+        ctx.drawImage(imgEl, 0, 0, 600, 600);
+        onUseImage(c.toDataURL('image/jpeg', 0.92), img.title);
         return;
       } catch { /* fall through */ }
-      // Last resort: use URL directly (display works, export may not)
       onUseImage(src, img.title);
     } finally {
       setConverting(null);
@@ -139,7 +168,7 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') search(query); }}
-              placeholder="搜索 Pinterest 图片资源..."
+              placeholder="搜索图片（支持中英文）..."
               style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: 12, padding: '7px 8px' }}
             />
             {query ? (
@@ -151,7 +180,7 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
           <button
             onClick={() => search(query)}
             disabled={loading || !query.trim()}
-            style={{ padding: '7px 12px', borderRadius: 8, background: 'linear-gradient(135deg,#e60023,#ad081b)', border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, cursor: loading || !query.trim() ? 'not-allowed' : 'pointer', opacity: loading || !query.trim() ? 0.6 : 1, flexShrink: 0 }}
+            style={{ padding: '7px 12px', borderRadius: 8, background: 'linear-gradient(135deg,#667eea,#764ba2)', border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, cursor: loading || !query.trim() ? 'not-allowed' : 'pointer', opacity: loading || !query.trim() ? 0.6 : 1, flexShrink: 0 }}
           >
             搜索
           </button>
@@ -163,7 +192,7 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
             <button
               key={tag}
               onClick={() => { setQuery(tag); search(tag); }}
-              style={{ padding: '3px 8px', borderRadius: 12, border: '1px solid rgba(230,0,35,0.25)', background: 'rgba(230,0,35,0.06)', color: 'rgba(255,255,255,0.6)', fontSize: 10, cursor: 'pointer', fontWeight: 500 }}
+              style={{ padding: '3px 8px', borderRadius: 12, border: '1px solid rgba(102,126,234,0.25)', background: 'rgba(102,126,234,0.08)', color: 'rgba(255,255,255,0.6)', fontSize: 10, cursor: 'pointer' }}
             >
               {tag}
             </button>
@@ -171,12 +200,12 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
         </div>
 
         {/* Source badge */}
-        {source ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
-            <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: source === 'Pinterest' ? 'rgba(230,0,35,0.15)' : 'rgba(32,173,228,0.15)', color: source === 'Pinterest' ? '#e60023' : '#20ade4', fontWeight: 700 }}>
-              {source === 'Pinterest' ? '📌 Pinterest' : '🖼 Pixabay'}
+        {source && results.length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
+            <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: 'rgba(102,126,234,0.15)', color: '#a5b4fc', fontWeight: 700 }}>
+              {source === 'Pixabay' ? '🖼 Pixabay' : '🌐 Openverse CC'}
             </span>
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>{results.length} 张结果</span>
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>{results.length} 张</span>
           </div>
         ) : null}
       </div>
@@ -185,8 +214,8 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 12px 12px' }}>
         {loading && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, paddingTop: 4 }}>
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} style={{ aspectRatio: '3/4', borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} style={{ aspectRatio: '1', borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
             ))}
           </div>
         )}
@@ -194,15 +223,18 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
         {!loading && error && (
           <div style={{ padding: '20px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 12, color: 'rgba(239,68,68,0.7)', marginBottom: 6 }}>{error}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>提示：确保已连接网络，或尝试英文关键词</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', lineHeight: 1.6 }}>
+              提示：英文关键词效果更好<br />
+              如：minimal dark、neon glow、cyberpunk
+            </div>
           </div>
         )}
 
         {!loading && results.length === 0 && !error && (
-          <div style={{ padding: '20px 0', textAlign: 'center' }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>📌</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>搜索后点击图片即可添加到上传库</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', marginTop: 4 }}>来源：Pinterest · Pixabay</div>
+          <div style={{ padding: '24px 0', textAlign: 'center' }}>
+            <ImageIcon size={32} color="rgba(255,255,255,0.1)" style={{ marginBottom: 8 }} />
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginBottom: 4 }}>点击上方标签或输入关键词搜索</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)' }}>来源：Openverse（免费 CC 授权图片）</div>
           </div>
         )}
 
@@ -213,7 +245,7 @@ const ImageSearchPanel: React.FC<ImageSearchPanelProps> = ({ onUseImage }) => {
                 key={i}
                 title={img.title}
                 onClick={() => handleUse(img)}
-                style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+                style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
               >
                 <img
                   src={img.thumbnail}
