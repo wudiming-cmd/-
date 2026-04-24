@@ -154,26 +154,20 @@ export function ModuleTab({
   };
 
   const handleBatchStyleFill = async () => {
-    if (!detectedStyle || isBatchFilling || !onSetModuleBackground) return;
-    const targets = [...allModules].sort((a, b) =>
-      a.gridY !== b.gridY ? a.gridY - b.gridY : a.gridX - b.gridX
-    );
-    if (targets.length === 0) return;
+    if (!detectedStyle || isBatchFilling || !onSetModuleBackground || !selectedModule) return;
     setIsBatchFilling(true);
-    setBatchFillProgress({ done: 0, total: targets.length, status: '准备中…' });
-    for (let i = 0; i < targets.length; i++) {
-      const mod = targets[i];
+    setBatchFillProgress({ done: 0, total: 1, status: '生成中…' });
+    try {
       const prompt = `${detectedStyle}，纯抽象背景，无图标无文字`;
-      setBatchFillProgress({ done: i, total: targets.length, status: `(${i + 1}/${targets.length}) 生成中…` });
-      try {
-        const result = await generateImage({ prompt, ratio: '1:1', style: 'general' }, (msg) =>
-          setBatchFillProgress(p => ({ ...p, status: `(${i + 1}/${targets.length}) ${msg}` }))
-        );
-        const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
-        onSetModuleBackground(mod.id, dataUrl);
-      } catch { /* 单个失败不中断 */ }
+      const result = await generateImage({ prompt, ratio: '1:1', style: 'general' }, (msg) =>
+        setBatchFillProgress(p => ({ ...p, status: msg }))
+      );
+      const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
+      onSetModuleBackground(selectedModule.id, dataUrl);
+      setBatchFillProgress({ done: 1, total: 1, status: '✅ 完成' });
+    } catch (err: any) {
+      setBatchFillProgress({ done: 0, total: 1, status: `❌ ${err.message?.slice(0, 30) || '生成失败'}` });
     }
-    setBatchFillProgress({ done: targets.length, total: targets.length, status: '✅ 全部完成' });
     setIsBatchFilling(false);
   };
 
@@ -485,7 +479,7 @@ export function ModuleTab({
       <div style={{ padding: '12px', background: 'rgba(102,126,234,0.06)', borderRadius: 10, border: '1px solid rgba(102,126,234,0.12)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <Layers size={13} color="#a855f7" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>即梦·风格识别 → 批量填充模块背景</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>即梦·风格识别 → 填充当前模块背景</span>
           </div>
 
           {/* 上传参考图 */}
@@ -529,16 +523,16 @@ export function ModuleTab({
           {detectedStyle && !isBatchFilling ? (
             <button
               onClick={handleBatchStyleFill}
-              disabled={allModules.length === 0 || !onSetModuleBackground}
+              disabled={!onSetModuleBackground || !selectedModule}
               style={{ marginTop: 8, width: '100%', padding: '10px', borderRadius: 8, background: 'linear-gradient(135deg,#667eea,#a855f7)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
             >
               <Layers size={13} />
-              一键填充所有 {allModules.length} 个模块
+              填充当前选中模块背景
             </button>
           ) : null}
 
-          {batchFillProgress.status === '✅ 全部完成' && !isBatchFilling ? (
-            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', textAlign: 'center' }}>✅ 全部模块背景已按风格生成并填充完成</div>
+          {batchFillProgress.status === '✅ 完成' && !isBatchFilling ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#34d399', textAlign: 'center' }}>✅ 当前模块背景已填充完成</div>
           ) : null}
         </div>
 
