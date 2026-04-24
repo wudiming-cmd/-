@@ -1887,36 +1887,42 @@ export default function App() {
                 ) : null}
 
                 {/* 图上图 · 人物/IP 叠加层 */}
-                {m.overlayImage ? (
-                  <>
-                    <img
-                      src={m.overlayImage}
-                      alt="overlay"
-                      style={{
-                        width: '100%',
-                        height: '115%',
-                        objectFit: 'contain',
-                        objectPosition: 'center bottom',
+                {m.overlayImage ? (() => {
+                  const ox = m.overlayX ?? 0;
+                  const oy = m.overlayY ?? 0;
+                  const sc = m.overlayScale ?? 1;
+                  return (
+                    <>
+                      <img
+                        src={m.overlayImage}
+                        alt="overlay"
+                        style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: '50%',
+                          height: `${sc * 100}%`,
+                          width: 'auto',
+                          maxWidth: 'none',
+                          objectFit: 'contain',
+                          transformOrigin: 'bottom center',
+                          transform: `translateX(calc(-50% + ${ox}%)) translateY(${oy}%)`,
+                          zIndex: 4,
+                          filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.75))',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                      <div style={{
                         position: 'absolute',
-                        bottom: 0,
-                        left: 0,
-                        zIndex: 4,
-                        filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.7))',
+                        bottom: 0, left: 0, right: 0,
+                        height: '30%',
+                        background: 'linear-gradient(to top, rgba(0,0,0,0.4) 0%, transparent 100%)',
+                        zIndex: 5,
                         pointerEvents: 'none',
-                      }}
-                    />
-                    {/* 底部渐隐融合 */}
-                    <div style={{
-                      position: 'absolute',
-                      bottom: 0, left: 0, right: 0,
-                      height: '35%',
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 100%)',
-                      zIndex: 5,
-                      pointerEvents: 'none',
-                      borderRadius: 'inherit',
-                    }} />
-                  </>
-                ) : null}
+                        borderRadius: 'inherit',
+                      }} />
+                    </>
+                  );
+                })() : null}
 
                 {/* 百分比填充条 */}
                 {m.percentage !== undefined && (

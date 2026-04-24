@@ -763,8 +763,10 @@ export function ModuleTab({
             <img
               src={selectedModule.overlayImage}
               alt="overlay preview"
-              style={{ width: '100%', maxHeight: 140, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.04)', display: 'block' }}
+              style={{ width: '100%', maxHeight: 120, objectFit: 'contain', borderRadius: 8, background: 'rgba(255,255,255,0.04)', display: 'block' }}
             />
+
+            {/* 操作按钮 */}
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button
                 onClick={handleOverlayRemoveBg}
@@ -774,10 +776,63 @@ export function ModuleTab({
                 {isRemovingOverlayBg ? '抠图中…' : '✂️ AI 抠图去背景'}
               </button>
               <button
-                onClick={() => onModuleUpdate(selectedModule.id, { overlayImage: undefined })}
+                onClick={() => onModuleUpdate(selectedModule.id, { overlayImage: undefined, overlayX: 0, overlayY: 0, overlayScale: 1 })}
                 style={{ padding: '8px 12px', background: '#dc3545', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12 }}
               >
                 移除
+              </button>
+            </div>
+
+            {/* 位置 & 大小调整 */}
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* 水平位置 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>← 水平位置 →</span>
+                  <span style={{ fontSize: 11, color: '#c4b5fd' }}>{selectedModule.overlayX ?? 0}%</span>
+                </div>
+                <input
+                  type="range" min={-80} max={80} step={1}
+                  value={selectedModule.overlayX ?? 0}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { overlayX: Number(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#a855f7' }}
+                />
+              </div>
+
+              {/* 垂直位置 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>↕ 垂直位置</span>
+                  <span style={{ fontSize: 11, color: '#c4b5fd' }}>{selectedModule.overlayY ?? 0}%</span>
+                </div>
+                <input
+                  type="range" min={-80} max={80} step={1}
+                  value={selectedModule.overlayY ?? 0}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { overlayY: Number(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#a855f7' }}
+                />
+              </div>
+
+              {/* 大小 */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>⊞ 大小</span>
+                  <span style={{ fontSize: 11, color: '#c4b5fd' }}>{((selectedModule.overlayScale ?? 1) * 100).toFixed(0)}%</span>
+                </div>
+                <input
+                  type="range" min={30} max={200} step={1}
+                  value={(selectedModule.overlayScale ?? 1) * 100}
+                  onChange={(e) => onModuleUpdate(selectedModule.id, { overlayScale: Number(e.target.value) / 100 })}
+                  style={{ width: '100%', accentColor: '#a855f7' }}
+                />
+              </div>
+
+              {/* 重置 */}
+              <button
+                onClick={() => onModuleUpdate(selectedModule.id, { overlayX: 0, overlayY: 0, overlayScale: 1 })}
+                style={{ padding: '6px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 7, color: 'rgba(255,255,255,0.45)', fontSize: 11, cursor: 'pointer' }}
+              >
+                重置位置与大小
               </button>
             </div>
           </div>

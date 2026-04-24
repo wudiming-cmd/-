@@ -24,6 +24,9 @@ export interface ModuleData {
   customIcon?: string;
   customImage?: string;
   overlayImage?: string;
+  overlayX?: number;
+  overlayY?: number;
+  overlayScale?: number;
   percentage?: number;
   percentageColor?: string;
 }
