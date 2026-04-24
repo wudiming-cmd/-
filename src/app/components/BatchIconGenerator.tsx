@@ -43,6 +43,7 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
   const [prompts, setPrompts] = useState<string[]>(ITEMS.map(item => item.placeholder));
   const [statuses, setStatuses] = useState<Status[]>(ITEMS.map(() => 'idle'));
   const [statusTexts, setStatusTexts] = useState<string[]>(ITEMS.map(() => '待生成'));
+  const [previews, setPreviews] = useState<(string | null)[]>(ITEMS.map(() => null));
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
 
@@ -74,6 +75,7 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
       );
       const dataUrl = await fetchAsDataUrl(result.imageUrls[0]).catch(() => result.imageUrls[0]);
       onSetModuleIcon(mod.id, dataUrl);
+      setPreviews(prev => { const n = [...prev]; n[i] = dataUrl; return n; });
       setItemStatus(i, 'done', '✓ 已填充');
     } catch (err: any) {
       setItemStatus(i, 'error', err.message?.slice(0, 30) || '生成失败');
@@ -101,6 +103,7 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
     setPrompts(ITEMS.map(item => item.placeholder));
     setStatuses(ITEMS.map(() => 'idle'));
     setStatusTexts(ITEMS.map(() => '待生成'));
+    setPreviews(ITEMS.map(() => null));
     setDone(0);
   };
 
@@ -145,7 +148,11 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
                 return (
                   <div
                     key={i}
-                    style={{ background: '#12122a', borderRadius: 10, padding: '9px 10px', border: '0.5px solid #2a2a4a' }}
+                    style={{
+                      background: '#12122a', borderRadius: 10, padding: '9px 10px',
+                      border: st === 'done' ? '0.5px solid rgba(61,204,138,0.3)' : st === 'error' ? '0.5px solid rgba(224,80,80,0.3)' : '0.5px solid #2a2a4a',
+                      transition: 'border-color 0.3s',
+                    }}
                   >
                     {/* Label row */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
@@ -157,6 +164,16 @@ export default function BatchIconGenerator({ modules, onSetModuleIcon }: Props) 
                         <span style={{ fontSize: 9, color: '#5a3a3a', flexShrink: 0 }}>无模块</span>
                       )}
                     </div>
+
+                    {/* Preview thumbnail */}
+                    {previews[i] ? (
+                      <div style={{ position: 'relative', marginBottom: 5 }}>
+                        <img src={previews[i]!} alt={item.label} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 6, display: 'block' }} />
+                        <div style={{ position: 'absolute', inset: 0, borderRadius: 6, background: 'rgba(61,204,138,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 16 }}>✓</span>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {/* Textarea */}
                     <textarea
