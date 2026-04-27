@@ -1651,6 +1651,17 @@ export default function App() {
             >
               + 新增模块
             </button>
+            <button
+              onClick={() => {
+                setSelectedModuleIds(modules.map(m => m.id));
+                setSelectedModuleId(null);
+                setSelectedTab('module');
+              }}
+              title="全部选中后可批量修改颜色、动画等"
+              style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(168,85,247,0.3)', background: selectedModuleIds.length === modules.length && modules.length > 0 ? 'rgba(168,85,247,0.2)' : 'rgba(168,85,247,0.08)', color: '#c4b5fd', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+            >
+              ☑ 全部选中
+            </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
