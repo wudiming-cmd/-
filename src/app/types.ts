@@ -22,6 +22,7 @@ export interface ModuleData {
   borderColor?: string;
   label?: string;
   animationType?: 'none' | 'glow' | 'float' | 'kenburns';
+  iconAnimationType?: 'none' | 'spin' | 'pulse' | 'shake' | 'bounce' | 'swing';
   customIcon?: string;
   customImage?: string;
   customImageX?: number;    // object-position X 0-100

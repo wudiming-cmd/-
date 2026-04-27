@@ -2026,31 +2026,43 @@ export default function App() {
 
                 {/* 图标 */}
                 
-                {IconTag && m.id !== 'top-left' && (
-                  <div
-                    style={{
-                      position: 'relative',
-                      zIndex: 10,
-                      width: m.iconBackgroundColor ? '104px' : 'auto',
-                      height: m.iconBackgroundColor ? '104px' : 'auto',
-                      borderRadius: m.iconBackgroundColor ? '52px' : undefined,
-                      backgroundColor: m.iconBackgroundColor || 'transparent',
-                      display: 'grid',
-                      placeItems: 'center',
-                      padding: m.iconBackgroundColor ? '10px' : undefined,
-                    }}
-                  >
-                    <IconTag
-                      size={80}
-                      color={m.iconColor}
-                      strokeWidth={2.5}
+                {IconTag && m.id !== 'top-left' && (() => {
+                  const iconAnim: Record<string, string> = {
+                    spin:   'iconSpin 2s linear infinite',
+                    pulse:  'iconPulse 1.4s ease-in-out infinite',
+                    shake:  'iconShake 0.7s ease-in-out infinite',
+                    bounce: 'iconBounce 1.2s ease-in-out infinite',
+                    swing:  'iconSwing 1s ease-in-out infinite',
+                  };
+                  const anim = m.iconAnimationType && m.iconAnimationType !== 'none'
+                    ? iconAnim[m.iconAnimationType] : undefined;
+                  return (
+                    <div
                       style={{
-                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
                         position: 'relative',
+                        zIndex: 10,
+                        width: m.iconBackgroundColor ? '104px' : 'auto',
+                        height: m.iconBackgroundColor ? '104px' : 'auto',
+                        borderRadius: m.iconBackgroundColor ? '52px' : undefined,
+                        backgroundColor: m.iconBackgroundColor || 'transparent',
+                        display: 'grid',
+                        placeItems: 'center',
+                        padding: m.iconBackgroundColor ? '10px' : undefined,
+                        animation: anim,
                       }}
-                    />
-                  </div>
-                )}
+                    >
+                      <IconTag
+                        size={80}
+                        color={m.iconColor}
+                        strokeWidth={2.5}
+                        style={{
+                          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))',
+                          position: 'relative',
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
 
                 {/* 标签 */}
                 {m.label ? (

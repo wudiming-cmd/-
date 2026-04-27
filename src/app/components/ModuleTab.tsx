@@ -769,6 +769,38 @@ export function ModuleTab({
         </div>
       </div>
 
+      {/* 图标动画 */}
+      <div style={{ padding: '12px', background: 'rgba(245,158,11,0.05)', borderRadius: 10, border: '1px solid rgba(245,158,11,0.12)' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#fcd34d', marginBottom: 10 }}>🎯 图标动画</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          {([
+            ['none',   '⬜ 无'],
+            ['spin',   '🔄 旋转'],
+            ['pulse',  '💗 脉冲'],
+            ['shake',  '📳 抖动'],
+            ['bounce', '🏀 弹跳'],
+            ['swing',  '🔔 摆动'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => onModuleUpdate(selectedModule.id, { iconAnimationType: val })}
+              style={{
+                padding: '7px 4px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                border: (selectedModule.iconAnimationType ?? 'none') === val
+                  ? '1.5px solid rgba(245,158,11,0.7)'
+                  : '1px solid rgba(255,255,255,0.08)',
+                background: (selectedModule.iconAnimationType ?? 'none') === val
+                  ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.03)',
+                color: (selectedModule.iconAnimationType ?? 'none') === val ? '#fcd34d' : 'rgba(255,255,255,0.45)',
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 图上图 · 人物/IP 叠加层 */}
       <div style={{ padding: '12px', background: 'rgba(168,85,247,0.06)', borderRadius: 10, border: '1px solid rgba(168,85,247,0.15)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>

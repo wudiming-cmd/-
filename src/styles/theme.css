@@ -10,6 +10,34 @@
   50%       { opacity: 1; }
 }
 
+/* ── 图标动画 ─────────────────────────────────────────────── */
+
+@keyframes iconSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes iconPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.28); }
+}
+@keyframes iconShake {
+  0%, 100% { transform: rotate(0deg) translateX(0); }
+  20%       { transform: rotate(-14deg) translateX(-3px); }
+  50%       { transform: rotate(14deg) translateX(3px); }
+  80%       { transform: rotate(-8deg) translateX(-2px); }
+}
+@keyframes iconBounce {
+  0%, 100% { transform: translateY(0px); }
+  35%       { transform: translateY(-14px); }
+  55%       { transform: translateY(-6px); }
+  75%       { transform: translateY(-10px); }
+}
+@keyframes iconSwing {
+  0%, 100% { transform: rotate(0deg); transform-origin: top center; }
+  25%       { transform: rotate(22deg); transform-origin: top center; }
+  75%       { transform: rotate(-22deg); transform-origin: top center; }
+}
+
 /* ── 模块动画 ─────────────────────────────────────────────── */
 
 /* 1. 呼吸光晕 */
