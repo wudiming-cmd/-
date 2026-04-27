@@ -10,6 +10,33 @@
   50%       { opacity: 1; }
 }
 
+/* ── 模块动画 ─────────────────────────────────────────────── */
+
+/* 1. 呼吸光晕 */
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(255,180,80,0.35), 0 0 28px rgba(255,140,40,0.2),
+                0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(255,180,80,0.75), 0 0 56px rgba(255,140,40,0.4),
+                0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+}
+
+/* 2. 人物/叠加层漂浮 */
+@keyframes overlayFloat {
+  0%, 100% { transform: translateY(0px);   }
+  50%       { transform: translateY(-9px);  }
+}
+
+/* 3. Ken Burns 背景缓慢放大漂移 */
+@keyframes kenBurns {
+  0%   { transform: scale(1)    translate(0%,   0%); }
+  50%  { transform: scale(1.08) translate(-2%,  -1.5%); }
+  100% { transform: scale(1)    translate(0%,   0%); }
+}
+
 :root {
   --font-size: 16px;
   --background: #ffffff;

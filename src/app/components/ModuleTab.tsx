@@ -736,6 +736,39 @@ export function ModuleTab({
         />
       </div>
 
+      {/* 动画效果 */}
+      <div style={{ padding: '12px', background: 'rgba(102,126,234,0.05)', borderRadius: 10, border: '1px solid rgba(102,126,234,0.12)' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#a5b4fc', marginBottom: 10 }}>✨ 动态效果</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {([
+            ['none',     '⬜ 无动画'],
+            ['glow',     '🌟 呼吸光晕'],
+            ['float',    '🎈 人物漂浮'],
+            ['kenburns', '🎬 Ken Burns'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => onModuleUpdate(selectedModule.id, { animationType: val })}
+              style={{
+                padding: '8px 6px', borderRadius: 8, fontSize: 11, fontWeight: 600,
+                border: (selectedModule.animationType ?? 'none') === val
+                  ? '1.5px solid rgba(102,126,234,0.7)'
+                  : '1px solid rgba(255,255,255,0.08)',
+                background: (selectedModule.animationType ?? 'none') === val
+                  ? 'rgba(102,126,234,0.18)' : 'rgba(255,255,255,0.03)',
+                color: (selectedModule.animationType ?? 'none') === val ? '#a5b4fc' : 'rgba(255,255,255,0.45)',
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginTop: 8 }}>
+          呼吸光晕→边框发光 · 人物漂浮→叠加层上下飘 · Ken Burns→背景缓慢放大
+        </div>
+      </div>
+
       {/* 图上图 · 人物/IP 叠加层 */}
       <div style={{ padding: '12px', background: 'rgba(168,85,247,0.06)', borderRadius: 10, border: '1px solid rgba(168,85,247,0.15)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>

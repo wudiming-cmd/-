@@ -21,6 +21,7 @@ export interface ModuleData {
   iconBackgroundColor?: string;
   borderColor?: string;
   label?: string;
+  animationType?: 'none' | 'glow' | 'float' | 'kenburns';
   customIcon?: string;
   customImage?: string;
   customImageX?: number;    // object-position X 0-100

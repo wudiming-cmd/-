@@ -3,7 +3,11 @@
     "allow": [
       "Bash(npx vite*)",
       "Bash(npm run*)",
-      "Bash(cd*)"
+      "Bash(cd*)",
+      "Bash(git commit -m ' *)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(grep -n \"^}$\\\\|^  \\)$\\\\|^  }$\" src/app/App.tsx)"
     ]
   }
 }

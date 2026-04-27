@@ -11,6 +11,7 @@ import AIImageGenerator from './components/AIImageGenerator';
 import BatchIconGenerator from './components/BatchIconGenerator';
 import BatchImageFiller from './components/BatchImageFiller';
 import WelcomeModal from './components/WelcomeModal';
+import VideoExportModal from './components/VideoExportModal';
 import {
   Plane,
   Music,
@@ -62,8 +63,12 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(() => {
     try { return !localStorage.getItem('cc_welcomed'); } catch { return true; }
   });
+  const [showVideoExport, setShowVideoExport] = useState(false);
   const [leftTab, setLeftTab] = useState<'trending' | 'images' | 'templates'>('trending');
   const [aiSubTab, setAiSubTab] = useState<'generate' | 'theme' | 'batch'>('generate');
+
+  // 叠加层拖拽状态
+  const overlayDragRef = useRef<{ moduleId: string; startX: number; startY: number; startOx: number; startOy: number; moduleW: number; moduleH: number } | null>(null);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [history, setHistory] = useState<Array<{modules: ModuleData[]; backgroundLayers: BackgroundLayer[]; backgroundBlur: number}>>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -988,7 +993,7 @@ export default function App() {
         styleEl.innerHTML = `
           /* hide pseudo-elements and normalize filters */
           #${wrapperId} *::before, #${wrapperId} *::after { display: none !important; content: none !important; }
-          #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; filter: none !important; }
+          #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; filter: none !important; animation-play-state: paused !important; }
           #${wrapperId} img { image-rendering: auto !important; }
           /* hide background grid/lines for clean export */
           #${wrapperId} [class*="grid"], #${wrapperId} [class*="line"], #${wrapperId} [class*="border"],
@@ -1337,7 +1342,7 @@ export default function App() {
         #${wrapperId} *::before, #${wrapperId} *::after { display: none !important; background: none !important; box-shadow: none !important; border: none !important; content: none !important; }
         #${wrapperId} svg, #${wrapperId} svg * { stroke: none !important; filter: none !important; }
         #${wrapperId} [class*="grid"], #${wrapperId} [class*="line"], #${wrapperId} [class*="border"], #${wrapperId} [data-grid], #${wrapperId} [data-line] { display: none !important; }
-        #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+        #${wrapperId} * { mix-blend-mode: normal !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; animation-play-state: paused !important; }
         #${wrapperId} *::before, #${wrapperId} *::after { background-image: none !important; background: none !important; }
       `;
       wrapper.insertBefore(styleEl, wrapper.firstChild);
@@ -1858,6 +1863,7 @@ export default function App() {
                   WebkitBackdropFilter: 'blur(30px) saturate(180%)',
                   transition: isDragging ? 'none' : 'all 0.18s ease',
                   transform: isDragging ? 'scale(1.05)' : isHoveringForFile ? 'scale(1.06)' : isSelected ? 'scale(1.02)' : 'scale(1)',
+                  animation: (!isDragging && !isSelected && m.animationType === 'glow') ? 'glowPulse 2.5s ease-in-out infinite' : undefined,
                   boxShadow: isFlashing
                     ? '0 0 0 6px rgba(255,255,255,0.06), 0 24px 48px rgba(0,0,0,0.35)'
                     : isHoveringForFile
@@ -1884,6 +1890,7 @@ export default function App() {
                         objectPosition: `${ix}% ${iy}%`,
                         transform: sc !== 1 ? `scale(${sc})` : undefined,
                         transformOrigin: `${ix}% ${iy}%`,
+                        animation: m.animationType === 'kenburns' ? 'kenBurns 8s ease-in-out infinite' : undefined,
                         zIndex: 0,
                         pointerEvents: 'none',
                         display: 'block',
@@ -1939,10 +1946,35 @@ export default function App() {
                           objectFit: 'contain',
                           transformOrigin: 'bottom center',
                           transform: `translateX(calc(-50% + ${ox}%)) translateY(${oy}%)`,
+                          animation: m.animationType === 'float' ? 'overlayFloat 3s ease-in-out infinite' : undefined,
                           zIndex: 4,
                           filter: 'drop-shadow(0 6px 18px rgba(0,0,0,0.75))',
-                          pointerEvents: 'none',
+                          pointerEvents: 'auto',
+                          cursor: 'move',
                         }}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const modEl = e.currentTarget.closest('[data-module-id]') as HTMLElement | null;
+                          const mw = modEl?.offsetWidth ?? 100;
+                          const mh = modEl?.offsetHeight ?? 100;
+                          overlayDragRef.current = {
+                            moduleId: m.id, startX: e.clientX, startY: e.clientY,
+                            startOx: m.overlayX ?? 0, startOy: m.overlayY ?? 0,
+                            moduleW: mw, moduleH: mh,
+                          };
+                        }}
+                        onPointerMove={(e) => {
+                          const d = overlayDragRef.current;
+                          if (!d || d.moduleId !== m.id) return;
+                          const dx = ((e.clientX - d.startX) / d.moduleW) * 100;
+                          const dy = ((e.clientY - d.startY) / d.moduleH) * 100;
+                          setModules(prev => prev.map(mod => mod.id === m.id
+                            ? { ...mod, overlayX: Math.round(d.startOx + dx), overlayY: Math.round(d.startOy + dy) }
+                            : mod
+                          ));
+                        }}
+                        onPointerUp={() => { overlayDragRef.current = null; }}
                       />
                       <div style={{
                         position: 'absolute',
@@ -2273,6 +2305,15 @@ export default function App() {
             高清导出
           </button>
 
+          {/* 视频导出 */}
+          <button
+            onClick={() => setShowVideoExport(true)}
+            title="导出动态视频"
+            style={{ padding: '11px 12px', borderRadius: 12, background: 'linear-gradient(135deg,#e85d04,#a855f7)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, flexShrink: 0 }}
+          >
+            🎬
+          </button>
+
           {/* 快速保存 */}
           <button
             onClick={() => exportViaCanvas('phone-canvas')}
@@ -2307,6 +2348,14 @@ export default function App() {
             setShowWelcome(false);
             try { localStorage.setItem('cc_welcomed', '1'); } catch {}
           }}
+        />
+      )}
+
+      {/* 视频导出弹窗 */}
+      {showVideoExport && (
+        <VideoExportModal
+          elementId="phone-canvas"
+          onClose={() => setShowVideoExport(false)}
         />
       )}
     </div>
