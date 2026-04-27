@@ -1839,7 +1839,7 @@ export default function App() {
                   width: modulePosition.width,
                   height: modulePosition.height,
                   borderRadius: m.position.borderRadius,
-                  backgroundColor: m.customImage ? 'transparent' : (m.gradient ? undefined : m.backgroundColor),
+                  backgroundColor: m.gradient ? undefined : (m.backgroundColor || '#1c1c1e'),
                   backgroundImage: m.customImage ? undefined : (m.gradient || undefined),
                   backgroundSize: 'cover',
                   backgroundPosition: 'center',
