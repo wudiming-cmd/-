@@ -6,12 +6,11 @@ import type { ModuleData } from './types';
 import { BackgroundTab } from './components/BackgroundTab';
 import { ModuleTab } from './components/ModuleTab';
 import { ExportDialog } from './components/ExportDialog';
-import { AIAssistant } from './components/AIAssistant';
 import AIImageGenerator from './components/AIImageGenerator';
-import BatchIconGenerator from './components/BatchIconGenerator';
-import BatchImageFiller from './components/BatchImageFiller';
 import WelcomeModal from './components/WelcomeModal';
 import VideoExportModal from './components/VideoExportModal';
+import BatchPanel from './components/BatchPanel';
+import ModuleQuickNav from './components/ModuleQuickNav';
 import {
   Plane,
   Music,
@@ -32,7 +31,7 @@ import {
   Sparkles,
   Download,
 } from 'lucide-react';
-import TrendingPanel from './components/TrendingPanel';
+// TrendingPanel removed
 import ImageSearchPanel from './components/ImageSearchPanel';
 
 type ModuleTemplate = Omit<ModuleData, 'id'> & { category: string };
@@ -59,13 +58,12 @@ export default function App() {
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const [backgroundLayers, setBackgroundLayers] = useState<BackgroundLayer[]>([]);
   const [backgroundBlur, setBackgroundBlur] = useState<number>(0);
-  const [selectedTab, setSelectedTab] = useState<'background' | 'module' | 'ai'>('module');
+  const [selectedTab, setSelectedTab] = useState<'canvas' | 'batch' | 'module'>('module');
   const [showWelcome, setShowWelcome] = useState(() => {
     try { return !localStorage.getItem('cc_welcomed'); } catch { return true; }
   });
   const [showVideoExport, setShowVideoExport] = useState(false);
-  const [leftTab, setLeftTab] = useState<'trending' | 'images' | 'templates'>('trending');
-  const [aiSubTab, setAiSubTab] = useState<'generate' | 'theme' | 'batch'>('generate');
+  const [leftTab, setLeftTab] = useState<'images' | 'templates'>('images');
 
   // 叠加层拖拽状态
   const overlayDragRef = useRef<{ moduleId: string; startX: number; startY: number; startOx: number; startOy: number; moduleW: number; moduleH: number } | null>(null);
@@ -1466,7 +1464,7 @@ export default function App() {
 
         {/* Tab bar */}
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)', flexShrink: 0 }}>
-          {([['trending', '热点'], ['images', '图片'], ['templates', '模板']] as const).map(([key, label]) => (
+          {([['images', '🖼 图片'], ['templates', '📦 模板']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setLeftTab(key)}
@@ -1490,8 +1488,6 @@ export default function App() {
 
         {/* Panel content */}
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {leftTab === 'trending' && <TrendingPanel key="trending" />}
-
           {leftTab === 'images' && (
             <ImageSearchPanel
               onUseImage={(dataUrl, name) => {
@@ -1655,7 +1651,7 @@ export default function App() {
               onClick={() => {
                 setSelectedModuleIds(modules.map(m => m.id));
                 setSelectedModuleId(null);
-                setSelectedTab('module');
+                setSelectedTab('batch');
               }}
               title="全部选中后可批量修改颜色、动画等"
               style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(168,85,247,0.3)', background: selectedModuleIds.length === modules.length && modules.length > 0 ? 'rgba(168,85,247,0.2)' : 'rgba(168,85,247,0.08)', color: '#c4b5fd', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
@@ -1679,6 +1675,19 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* 模块快速导航 */}
+        <ModuleQuickNav
+          modules={modules}
+          selectedModuleId={selectedModuleId}
+          selectedModuleIds={selectedModuleIds}
+          onSelect={(id) => {
+            setSelectedModuleId(id);
+            setSelectedModuleIds([]);
+            setSelectedTab('module');
+          }}
+        />
+
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
         <div
           id="phone-canvas"
@@ -2140,38 +2149,37 @@ export default function App() {
       {/* 右侧：编辑面板 */}
       <div style={{ width: '400px', background: '#141414', color: '#fff', display: 'flex', flexDirection: 'column', boxShadow: '-1px 0 0 rgba(255,255,255,0.06)' }}>
         <div style={{ padding: '16px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'linear-gradient(135deg, rgba(102,126,234,0.15) 0%, rgba(118,75,162,0.1) 100%)' }}>
-          <div style={{ fontSize: '15px', fontWeight: 800, letterSpacing: '-0.3px', color: '#fff' }}>设置面板</div>
-          <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>选择模块或调整背景与主题</div>
+          <div style={{ fontSize: '15px', fontWeight: 800, letterSpacing: '-0.3px', color: '#fff' }}>
+            {selectedTab === 'module' ? '🔲 模块编辑' : selectedTab === 'batch' ? '⚡ 批量操作' : '🎨 画布设置'}
+          </div>
+          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>
+            {selectedTab === 'module' ? '精细调整选中模块' : selectedTab === 'batch' ? '批量配色 · AI填充 · 上传 · 动画' : '全局背景 · AI文生图'}
+          </div>
         </div>
 
         {/* 选项卡 */}
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.15)' }}>
           {([
-            ['module', '模块', null],
-            ['background', '背景', null],
-            ['ai', 'AI 助手', true],
-          ] as const).map(([key, label, isAI]) => (
+            ['module',  '🔲 模块'],
+            ['batch',   '⚡ 批量'],
+            ['canvas',  '🎨 画布'],
+          ] as const).map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setSelectedTab(key as any)}
+              onClick={() => setSelectedTab(key)}
               style={{
                 flex: 1,
-                padding: '12px 0',
+                padding: '11px 0',
                 background: selectedTab === key ? 'rgba(102,126,234,0.1)' : 'transparent',
-                color: selectedTab === key ? (isAI ? '#a5b4fc' : '#fff') : 'rgba(255,255,255,0.45)',
+                color: selectedTab === key ? '#a5b4fc' : 'rgba(255,255,255,0.4)',
                 border: 'none',
                 cursor: 'pointer',
                 fontWeight: selectedTab === key ? 700 : 500,
-                fontSize: '13px',
-                borderBottom: selectedTab === key ? `2px solid ${isAI ? '#a5b4fc' : '#667eea'}` : '2px solid transparent',
+                fontSize: '12px',
+                borderBottom: selectedTab === key ? '2px solid #667eea' : '2px solid transparent',
                 transition: 'all 0.15s ease',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 5,
               }}
             >
-              {key === 'ai' && <Sparkles size={12} />}
               {label}
             </button>
           ))}
@@ -2179,18 +2187,8 @@ export default function App() {
 
         {/* 选项卡内容 */}
         <div style={{ flex: 1, overflow: 'auto' }}>
-          {selectedTab === 'background' && (
-            <BackgroundTab key="bg"
-              backgroundLayers={backgroundLayers}
-              backgroundBlur={backgroundBlur}
-              onAddBackground={addBackgroundLayer}
-              onRemoveLayer={removeBackgroundLayer}
-              onUpdateLayer={updateBackgroundLayer}
-              onMoveLayer={moveBackgroundLayer}
-              onClearLayers={clearBackgroundLayers}
-              onBlurChange={(value) => commitCanvasState(modules, backgroundLayers, value)}
-            />
-          )}
+
+          {/* 🔲 模块 — 单模块精细编辑 */}
           {selectedTab === 'module' && (
             <ModuleTab key="module"
               selectedModule={selectedModule}
@@ -2201,76 +2199,48 @@ export default function App() {
               onSetModuleIcon={setModuleIcon}
               onSetModuleBackground={setModuleBackground}
               onSetModuleOverlay={setModuleOverlay}
-              onDeselect={() => {
-                setSelectedModuleId(null);
-                setSelectedModuleIds([]);
-              }}
+              onDeselect={() => { setSelectedModuleId(null); setSelectedModuleIds([]); }}
               onDeleteModule={handleDeleteModule}
             />
           )}
-          {selectedTab === 'ai' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              {/* AI sub-tabs */}
-              {/* AI 三个子标签 */}
-              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-                {([
-                  ['generate', '✨ 生图'],
-                  ['theme',    '🎨 主题'],
-                  ['batch',    '⚡ 批量'],
-                ] as const).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => setAiSubTab(key)}
-                    style={{
-                      flex: 1,
-                      padding: '9px 0',
-                      border: 'none',
-                      background: aiSubTab === key ? 'rgba(168,85,247,0.1)' : 'transparent',
-                      color: aiSubTab === key ? '#c4b5fd' : 'rgba(255,255,255,0.4)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      borderBottom: aiSubTab === key ? '2px solid #a855f7' : '2px solid transparent',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div style={{ flex: 1, overflow: 'auto' }}>
-                {aiSubTab === 'generate' && (
-                  <AIImageGenerator
-                    onUseAsBackground={(dataUrl) => {
-                      addBackgroundLayer(dataUrl, 'AI生成背景');
-                      setSelectedTab('background');
-                    }}
-                    onUseAsModuleImage={(dataUrl, name) => {
-                      const id = `img_${Date.now()}`;
-                      setUploadedImages((prev: any[]) => [...prev, { id, dataURL: dataUrl, name }]);
-                    }}
-                  />
-                )}
-                {aiSubTab === 'theme' && (
-                  <AIAssistant
-                    modules={modules}
-                    onApplyTheme={handleApplyTheme}
-                    onBatchModuleUpdate={handleBatchModuleUpdate}
-                  />
-                )}
-                {aiSubTab === 'batch' && (
-                  <div>
-                    <BatchImageFiller
-                      modules={modules}
-                      onSetModuleOverlay={setModuleOverlay}
-                    />
-                    <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 16px 0' }} />
-                    <BatchIconGenerator
-                      modules={modules}
-                      onSetModuleIcon={setModuleIcon}
-                    />
-                  </div>
-                )}
+
+          {/* ⚡ 批量 — 批量配色/动画/AI填充/上传 */}
+          {selectedTab === 'batch' && (
+            <BatchPanel
+              modules={modules}
+              selectedModuleIds={selectedModuleIds}
+              onSelectAll={() => { setSelectedModuleIds(modules.map(m => m.id)); setSelectedModuleId(null); }}
+              onDeselectAll={() => { setSelectedModuleIds([]); setSelectedModuleId(null); }}
+              onBatchModuleUpdate={handleBatchModuleUpdate}
+              onSetModuleIcon={setModuleIcon}
+              onSetModuleOverlay={setModuleOverlay}
+              onSetModuleBackground={setModuleBackground}
+              onApplyTheme={handleApplyTheme}
+            />
+          )}
+
+          {/* 🎨 画布 — 全局背景 + AI文生图 */}
+          {selectedTab === 'canvas' && (
+            <div>
+              <BackgroundTab key="bg"
+                backgroundLayers={backgroundLayers}
+                backgroundBlur={backgroundBlur}
+                onAddBackground={addBackgroundLayer}
+                onRemoveLayer={removeBackgroundLayer}
+                onUpdateLayer={updateBackgroundLayer}
+                onMoveLayer={moveBackgroundLayer}
+                onClearLayers={clearBackgroundLayers}
+                onBlurChange={(value) => commitCanvasState(modules, backgroundLayers, value)}
+              />
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 4 }}>
+                <div style={{ padding: '10px 16px 6px', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.4)' }}>✨ AI 文生图（用作背景）</div>
+                <AIImageGenerator
+                  onUseAsBackground={(dataUrl) => { addBackgroundLayer(dataUrl, 'AI生成背景'); }}
+                  onUseAsModuleImage={(dataUrl, name) => {
+                    const id = `img_${Date.now()}`;
+                    setUploadedImages((prev: any[]) => [...prev, { id, dataURL: dataUrl, name }]);
+                  }}
+                />
               </div>
             </div>
           )}
