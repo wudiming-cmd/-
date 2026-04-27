@@ -1837,7 +1837,7 @@ export default function App() {
                   WebkitBackdropFilter: 'blur(30px) saturate(180%)',
                   transition: isDragging ? 'none' : 'all 0.18s ease',
                   transform: isDragging ? 'scale(1.05)' : isHoveringForFile ? 'scale(1.06)' : isSelected ? 'scale(1.02)' : 'scale(1)',
-                  animation: (!isDragging && !isSelected && m.animationType === 'glow') ? 'glowPulse 2.5s ease-in-out infinite' : undefined,
+                  animation: (!isDragging && m.animationType === 'glow') ? 'glowPulse 2.5s ease-in-out infinite' : undefined,
                   boxShadow: isFlashing
                     ? '0 0 0 6px rgba(255,255,255,0.06), 0 24px 48px rgba(0,0,0,0.35)'
                     : isHoveringForFile
