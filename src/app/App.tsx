@@ -1999,17 +1999,25 @@ export default function App() {
 
                 {/* 光泽效果（仅无背景图时显示）*/}
                 {!m.customImage && (
-                  <div style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: '40%',
-                    background: 'linear-gradient(180deg, rgba(255,255,255,0.1) 0%, transparent 100%)',
-                    pointerEvents: 'none',
-                    borderRadius: `${m.position.borderRadius}px ${m.position.borderRadius}px 0 0`,
-                    zIndex: 5
-                  }} />
+                  <>
+                    {/* 顶部高光 */}
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0, right: 0,
+                      height: '40%',
+                      background: 'linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%)',
+                      pointerEvents: 'none',
+                      borderRadius: `${m.position.borderRadius}px ${m.position.borderRadius}px 0 0`,
+                      zIndex: 5,
+                    }} />
+                    {/* 内边框 */}
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      borderRadius: 'inherit',
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.15)',
+                      pointerEvents: 'none',
+                      zIndex: 6,
+                    }} />
+                  </>
                 )}
 
                 {/* 左上角大方块模块内四个图标 */}

@@ -165,12 +165,18 @@ export default function BatchPanel({
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>快速预设背景色</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 10 }}>
             {COLOR_PRESETS.map(p => (
-              <button key={p.label} onClick={() => onBatchModuleUpdate(targetIds, { backgroundColor: p.color, gradient: undefined, customImage: undefined })}
+              <button key={p.label} onClick={() => onBatchModuleUpdate(targetIds, { backgroundColor: p.color, gradient: undefined })}
                 style={{ padding: '8px 4px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: p.color, color: p.color === 'rgba(255,255,255,0.85)' ? '#000' : '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
                 {p.label}
               </button>
             ))}
           </div>
+          <button
+            onClick={() => onBatchModuleUpdate(targetIds, { customImage: undefined, overlayImage: undefined })}
+            style={{ width: '100%', marginBottom: 10, padding: '6px', borderRadius: 7, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.05)', color: '#f87171', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+          >
+            🗑 清除选中模块的背景图和叠加图（颜色保留）
+          </button>
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginBottom: 6 }}>自定义颜色</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="color" defaultValue="#1c1c1e"
